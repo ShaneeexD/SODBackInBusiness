@@ -308,57 +308,73 @@ namespace BackInBusiness
                     noBusinessesText.fontSize = 16;
                     noBusinessesText.color = Color.yellow;
                     purchaseButton.Component.interactable = false;
-                    return;
+                    
+                    // Set layout for the text
+                    LayoutElement textLayout = noBusinessesText.gameObject.AddComponent<LayoutElement>();
+                    textLayout.minHeight = 40;
+                    textLayout.preferredHeight = 40;
+                    textLayout.flexibleHeight = 0;
                 }
-                
-                // Create clickable entries for each business
-                for (int i = 0; i < availableBusinesses.Count; i++)
+                else
                 {
-                    int index = i; // Capture for closure
-                    var business = availableBusinesses[i];
-                    string name = business.name?.ToString() ?? "Unknown";
-                    string id = business.id.ToString();
-                    
-                    // Create a container for this business entry
-                    GameObject entryContainer = UIFactory.CreateHorizontalGroup(businessListContainer, $"BusinessEntry_{i}", true, false, true, true, 5);
-                    
-                    // Update the existing background image color (UIFactory.CreateHorizontalGroup already adds an Image)
-                    Image bgImage = entryContainer.GetComponent<Image>();
-                    if (bgImage != null)
+                    // Create buttons for each business
+                    for (int i = 0; i < availableBusinesses.Count; i++)
                     {
-                        bgImage.color = (i == selectedBusinessIndex) ? new Color(0.3f, 0.5f, 0.7f, 0.5f) : new Color(0.2f, 0.2f, 0.2f, 0.5f);
-                    }
-                    
-                    // Create a button for the entire entry
-                    ButtonRef entryButton = UIFactory.CreateButton(entryContainer, $"BusinessButton_{i}", "");
-                    if (entryButton != null)
-                    {
-                        entryButton.OnClick += () => SelectBusiness(index);
+                        var business = availableBusinesses[i];
+                        string name = business.name?.ToString() ?? "Unknown";
+                        string id = business.id.ToString();
                         
-                        // Make button transparent if possible
-                        if (entryButton.Component != null)
+                        // IMPORTANT: Store the index in a local variable to avoid closure issues
+                        int capturedIndex = i;
+                        
+                        // Create a button for this business
+                        string buttonText = $"{i + 1}. {name} (ID: {id})";
+                        ButtonRef entryButton = UIFactory.CreateButton(businessListContainer, $"BusinessButton_{i}", buttonText);
+                        
+                        // Set up the click handler
+                        entryButton.OnClick += () => {
+                            Plugin.Logger.LogInfo($"Business button clicked for index {capturedIndex}");
+                            SelectBusiness(capturedIndex);
+                        };
+                        
+                        // Style the button
+                        entryButton.ButtonText.alignment = TextAnchor.MiddleLeft;
+                        entryButton.ButtonText.fontSize = 16;
+                        entryButton.ButtonText.color = (i == selectedBusinessIndex) ? Color.white : new Color(0.9f, 0.9f, 0.9f, 1f);
+                        
+                        // Set button colors based on selection state
+                        Button button = entryButton.Component;
+                        if (button != null)
                         {
-                            Image buttonImage = entryButton.Component.GetComponent<Image>();
-                            if (buttonImage != null)
+                            ColorBlock colors = button.colors;
+                            
+                            if (i == selectedBusinessIndex)
                             {
-                                buttonImage.color = new Color(0, 0, 0, 0);
+                                // Selected button colors (blue)
+                                colors.normalColor = new Color(0.3f, 0.5f, 0.7f, 1f);
                             }
+                            else
+                            {
+                                // Normal button colors (dark gray)
+                                colors.normalColor = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+                            }
+                            
+                            // Set highlight colors
+                            colors.highlightedColor = new Color(colors.normalColor.r + 0.1f, colors.normalColor.g + 0.1f, colors.normalColor.b + 0.1f, 1f);
+                            colors.pressedColor = new Color(colors.normalColor.r - 0.1f, colors.normalColor.g - 0.1f, colors.normalColor.b - 0.1f, 1f);
+                            button.colors = colors;
                         }
+                        
+                        // Set button layout
+                        LayoutElement buttonLayout = entryButton.GameObject.AddComponent<LayoutElement>();
+                        buttonLayout.minHeight = 40;
+                        buttonLayout.preferredHeight = 40;
+                        buttonLayout.flexibleHeight = 0;
+                        buttonLayout.flexibleWidth = 1;
                         
                         // Store the button reference
                         businessButtons.Add(entryButton);
                     }
-                    
-                    // Create text for the business details
-                    Text entryText = UIFactory.CreateLabel(entryContainer, $"BusinessText_{i}", $"{i + 1}. {name} (ID: {id})", TextAnchor.MiddleLeft);
-                    entryText.fontSize = 16;
-                    entryText.color = (i == selectedBusinessIndex) ? Color.white : new Color(0.9f, 0.9f, 0.9f, 1f);
-                    
-                    // Set layout element for proper sizing
-                    LayoutElement layoutElement = entryContainer.AddComponent<LayoutElement>();
-                    layoutElement.minHeight = 40;
-                    layoutElement.preferredHeight = 40;
-                    layoutElement.flexibleHeight = 0;
                 }
                 
                 // Update purchase button state
@@ -405,47 +421,28 @@ namespace BackInBusiness
         {
             if (index >= 0 && index < availableBusinesses.Count)
             {
+                // Log selection for debugging
+                Plugin.Logger.LogInfo($"Selecting business at index {index}");
+                
                 // Update selection state
                 int previousIndex = selectedBusinessIndex;
                 selectedBusinessIndex = index;
-                purchaseButton.Component.interactable = true;
                 
-                // Update visual appearance of business entries
-                for (int i = 0; i < businessButtons.Count; i++)
+                // Enable purchase button
+                if (purchaseButton != null && purchaseButton.Component != null)
                 {
-                    if (i < availableBusinesses.Count)
-                    {
-                        // Update background color for selected/deselected items
-                        Transform entryTransform = businessButtons[i].GameObject.transform.parent;
-                        if (entryTransform != null)
-                        {
-                            Image bgImage = entryTransform.GetComponent<Image>();
-                            if (bgImage != null)
-                            {
-                                bgImage.color = (i == selectedBusinessIndex) 
-                                    ? new Color(0.3f, 0.5f, 0.7f, 0.5f) 
-                                    : new Color(0.2f, 0.2f, 0.2f, 0.5f);
-                            }
-                            
-                            // Update text color
-                            Transform textTransform = entryTransform.Find($"BusinessText_{i}");
-                            if (textTransform != null)
-                            {
-                                Text entryText = textTransform.GetComponent<Text>();
-                                if (entryText != null)
-                                {
-                                    entryText.color = (i == selectedBusinessIndex) 
-                                        ? Color.white 
-                                        : new Color(0.9f, 0.9f, 0.9f, 1f);
-                                }
-                            }
-                        }
-                    }
+                    purchaseButton.Component.interactable = true;
                 }
                 
+                // Clear and recreate all business buttons to update the UI
+                // This ensures the selected button is properly highlighted
+                businessButtons.Clear();
+                RefreshBusinessList();
+                
+                // Log the selection for verification
                 var selectedBusiness = availableBusinesses[index];
                 string name = selectedBusiness.name?.ToString() ?? "Unknown";
-                Plugin.Logger.LogInfo($"Selected business: {name} (Index: {index})");
+                Plugin.Logger.LogInfo($"Selected business: {name} (ID: {selectedBusiness.id}, Index: {index})");
             }
         }
         
