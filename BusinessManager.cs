@@ -111,6 +111,7 @@ namespace BackInBusiness
             try
             {
                 List<NewAddress> businesses = new List<NewAddress>();
+                List<NewAddress> ownedBusinesses = new List<NewAddress>();
                 
                 if (CityData.Instance == null)
                 {
@@ -122,6 +123,11 @@ namespace BackInBusiness
                 {
                     Plugin.Logger.LogError("CityData.Instance.citizenDirectory is null");
                     return businesses;
+                }
+
+                foreach (NewAddress address in Player.Instance.apartmentsOwned)
+                {
+                    ownedBusinesses.Add(address);
                 }
                 
                 Plugin.Logger.LogInfo($"Found {CityData.Instance.citizenDirectory.Count} citizens");
@@ -150,6 +156,12 @@ namespace BackInBusiness
                     
                     if (citizen.job.employer.placeOfBusiness.thisAsAddress == null)
                     {
+                        continue;
+                    }
+
+                    if (ownedBusinesses.Contains(citizen.job.employer.placeOfBusiness.thisAsAddress))
+                    {
+                        Plugin.Logger.LogInfo($"Skipping owned business {citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString()}");
                         continue;
                     }
                     

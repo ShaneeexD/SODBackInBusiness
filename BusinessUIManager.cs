@@ -582,9 +582,9 @@ namespace BackInBusiness
                 Player.Instance.apartmentsOwned.Add(selectedBusiness);
                 Player.Instance.AddToKeyring(selectedBusiness, true);
 
-                // Call your business purchase logic here
-                // BusinessManager.Instance.PurchaseBusiness(selectedBusiness);
-                
+                availableBusinesses.RemoveAt(selectedBusinessIndex);
+                businessButtons.RemoveAt(selectedBusinessIndex);
+
                 // For now, just log the action
                 Plugin.Logger.LogInfo($"Purchase initiated for business: {selectedBusiness.name} (ID: {selectedBusiness.id})");
                 Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name}.", 3, true);
