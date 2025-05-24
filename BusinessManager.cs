@@ -193,13 +193,8 @@ namespace BackInBusiness
                     
                     // Add the business to our list
                     businesses.Add(citizen.job.employer.placeOfBusiness.thisAsAddress);
-
-                    foreach (var business in businesses)
-                    {
-                        Plugin.Logger.LogInfo($"Found business {citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString()}, Business preset: {business.company.preset.name}");
-                    }
                     
-                    //Plugin.Logger.LogInfo($"Found business {citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString() ?? "Unknown"}");
+                    Plugin.Logger.LogInfo($"Found business {citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString() ?? "Unknown"}");
                 }
 
                 //Plugin.Logger.LogInfo($"Found {businesses.Count} unique businesses");

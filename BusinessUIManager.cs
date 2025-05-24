@@ -318,17 +318,31 @@ namespace BackInBusiness
                         var business = availableBusinesses[i];
                         string name = business.name?.ToString() ?? "Unknown";
                         string id = business.id.ToString();
-                        
+                        string buttonText = null;
                         // IMPORTANT: Store the index in a local variable to avoid closure issues
                         int capturedIndex = i;
                         
+                        CompanyPresets companyPresets = new CompanyPresets();
+                        // Initialize with default text
+                        buttonText = $"{i + 1}. {name} (ID: {id})";
+                        
+                        // Search for matching preset name in the CompanyPresetsList
+                        string presetName = business.company.preset.name;
+                        for (int j = 0; j < companyPresets.CompanyPresetsList.Length; j++)
+                        {
+                            if (presetName == companyPresets.CompanyPresetsList[j].Item1)
+                            {
+                                // Found matching preset, add cost to button text
+                                int cost = companyPresets.CompanyPresetsList[j].Item2;
+                                buttonText = $"{i + 1}. {name} (ID: {id}, Cost: ${cost})";
+                                break; // Exit loop once we find a match
+                            }
+                        }
                         // Create a button for this business
-                        string buttonText = $"{i + 1}. {name} (ID: {id})";
                         ButtonRef entryButton = UIFactory.CreateButton(businessListContainer, $"BusinessButton_{i}", buttonText);
                         
                         // Set up the click handler with a more direct approach
-                        // Store the index in the button's name to avoid closure issues
-                        entryButton.GameObject.name = $"BusinessButton_{capturedIndex}";
+                        // Store the index in the button's name to avoid closure issues                        entryButton.GameObject.name = $"BusinessButton_{capturedIndex}";
                         
                         // Create a completely separate method to handle the click
                         // This prevents any potential issues with the UI system
@@ -435,15 +449,13 @@ namespace BackInBusiness
         private void CloseBusinessUI()
         {
             SetActive(false);
-            if(!BusinessUIManager.uiEnabled)
-            {
-                Player.Instance.EnableCharacterController(true);
-                Player.Instance.EnablePlayerMouseLook(true, true);
-                InputController.Instance.enabled = true;
-                SessionData sessionData = SessionData.Instance;
-                sessionData.ResumeGame();
-                Cursor.lockState = CursorLockMode.Locked;
-            }
+            Player.Instance.EnableCharacterController(true);
+            Player.Instance.EnablePlayerMouseLook(true, true);
+            InputController.Instance.enabled = true;
+            SessionData sessionData = SessionData.Instance;
+            sessionData.ResumeGame();
+            Cursor.lockState = CursorLockMode.Locked;
+
         }
         
         private void SelectBusiness(int index)

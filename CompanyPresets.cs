@@ -10,7 +10,7 @@ namespace BackInBusiness
     public class CompanyPresets
     {
     
-        (string, int)[] CompanyPresetsList = {
+        public (string, int)[] CompanyPresetsList = {
             ("AmericanDiner", 5000),
             ("Ballroom", 10000),
             ("Bar", 15000),
