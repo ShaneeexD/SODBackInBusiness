@@ -11,6 +11,8 @@ using UniverseLib.UI.Panels;
 using Il2CppInterop.Runtime;
 using Il2CppSystem;
 using UniverseLib.Config;
+using System.Runtime.InteropServices;
+using SOD.Common;
 
 namespace BackInBusiness
 {
@@ -35,6 +37,7 @@ namespace BackInBusiness
         // Static reference to track if UI has been created
         private static bool uiInitialized = false;
         
+        public static bool uiEnabled = false;
         // Create the business UI
         public void CreateBusinessUI()
         {
@@ -102,35 +105,15 @@ namespace BackInBusiness
 
                 if(!businessPanel.Enabled)
                 {
-
-
-                    Player.Instance.EnablePlayerMouseLook(true, false);
-                    Player.Instance.EnableCharacterController(true);
-                    SessionData sessionData = SessionData.Instance;
-                    InputController.Instance.enabled = true;
-                    sessionData.ResumeGame();
-                    // Put the mouse back in the game by updating UniverseLib config
-                    // Access the config via reflection since we don't have direct access to it
                     try
                     {
-                        var configType = typeof(Universe).Assembly.GetType("UniverseLib.Config.UniverseLibConfig");
-                        if (configType != null)
-                        {
-                            var configField = typeof(Universe).GetField("Config", BindingFlags.Public | BindingFlags.Static);
-                            if (configField != null)
-                            {
-                                var config = configField.GetValue(null);
-                                if (config != null)
-                                {
-                                    var forceUnlockField = configType.GetField("Force_Unlock_Mouse");
-                                    if (forceUnlockField != null)
-                                    {
-                                        forceUnlockField.SetValue(config, false);
-                                        Plugin.Logger.LogInfo("Mouse control returned to game");
-                                    }
-                                }
-                            }
-                        }
+                        uiEnabled = false;
+                        Player.Instance.EnableCharacterController(true);
+                        Player.Instance.EnablePlayerMouseLook(true, true);
+                        InputController.Instance.enabled = true;
+                        SessionData sessionData = SessionData.Instance;
+                        sessionData.ResumeGame();
+                        Cursor.lockState = CursorLockMode.Locked;
                     }
                     catch (System.Exception ex)
                     {
@@ -139,11 +122,12 @@ namespace BackInBusiness
                 }
                 else
                 {
+                    uiEnabled = true;
                     Player.Instance.EnablePlayerMouseLook(false, false);
                     Player.Instance.EnableCharacterController(false);
-                    SessionData sessionData = SessionData.Instance;
-                    sessionData.PauseGame(true, false, false);
                     InputController.Instance.enabled = false;
+                    SessionData sessionData = SessionData.Instance;
+                    sessionData.PauseGame(false, false, true);
                 }
             }
             catch (System.Exception ex)
@@ -276,7 +260,6 @@ namespace BackInBusiness
                 Plugin.Logger.LogInfo("Panel activated for the first time, refreshing business list");
                 RefreshBusinessList();
             }
-            
             // Update the active state for next frame
             wasActiveLastFrame = active;
         }
@@ -452,11 +435,15 @@ namespace BackInBusiness
         private void CloseBusinessUI()
         {
             SetActive(false);
-            Player.Instance.EnablePlayerMouseLook(true, false);
-            Player.Instance.EnableCharacterController(true);
-            SessionData sessionData = SessionData.Instance;
-            InputController.Instance.enabled = true;
-            sessionData.ResumeGame();
+            if(!BusinessUIManager.uiEnabled)
+            {
+                Player.Instance.EnableCharacterController(true);
+                Player.Instance.EnablePlayerMouseLook(true, true);
+                InputController.Instance.enabled = true;
+                SessionData sessionData = SessionData.Instance;
+                sessionData.ResumeGame();
+                Cursor.lockState = CursorLockMode.Locked;
+            }
         }
         
         private void SelectBusiness(int index)
@@ -575,16 +562,20 @@ namespace BackInBusiness
             try
             {
                 var selectedBusiness = availableBusinesses[selectedBusinessIndex];
-                string businessName = selectedBusiness.name?.ToString() ?? "Unknown";
+                NewAddress businessName = selectedBusiness;
                 
-                Plugin.Logger.LogInfo($"Attempting to purchase business: {businessName}");
-                
+                Plugin.Logger.LogInfo($"Attempting to purchase business: {businessName.name}");
+
+                Player.Instance.AddLocationOfAuthorty(selectedBusiness);
+                Player.Instance.apartmentsOwned.Add(selectedBusiness);
+                Player.Instance.AddToKeyring(selectedBusiness, true);
+
                 // Call your business purchase logic here
                 // BusinessManager.Instance.PurchaseBusiness(selectedBusiness);
                 
                 // For now, just log the action
-                Plugin.Logger.LogInfo($"Purchase initiated for business: {businessName} (ID: {selectedBusiness.id})");
-                
+                Plugin.Logger.LogInfo($"Purchase initiated for business: {selectedBusiness.name} (ID: {selectedBusiness.id})");
+                Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name}.", 3, true);
                 // Reset selection and refresh list
                 selectedBusinessIndex = -1;
                 purchaseButton.Component.interactable = false;
