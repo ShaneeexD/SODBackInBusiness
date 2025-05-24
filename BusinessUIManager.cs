@@ -261,15 +261,24 @@ namespace BackInBusiness
             layoutElement.preferredHeight = 35;
         }
         
+        // Track the panel's active state to prevent unnecessary refreshes
+        private bool wasActiveLastFrame = false;
+        
         public override void SetActive(bool active)
         {
+            // Call base method first
             base.SetActive(active);
             
-            // Refresh the business list when the panel is activated
-            if (active)
+            // Only refresh the business list when the panel is first activated
+            // This prevents refreshing when clicking on businesses
+            if (active && !wasActiveLastFrame)
             {
+                Plugin.Logger.LogInfo("Panel activated for the first time, refreshing business list");
                 RefreshBusinessList();
             }
+            
+            // Update the active state for next frame
+            wasActiveLastFrame = active;
         }
         
         // Refresh the business list
@@ -277,6 +286,9 @@ namespace BackInBusiness
         {
             try
             {
+                // Add stack trace to see where this method is being called from
+                System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace();
+                Plugin.Logger.LogInfo($"RefreshBusinessList called from: {stackTrace.ToString()}");
                 Plugin.Logger.LogInfo("Refreshing business list...");
                 
                 // Get available businesses
@@ -331,10 +343,40 @@ namespace BackInBusiness
                         string buttonText = $"{i + 1}. {name} (ID: {id})";
                         ButtonRef entryButton = UIFactory.CreateButton(businessListContainer, $"BusinessButton_{i}", buttonText);
                         
-                        // Set up the click handler
+                        // Set up the click handler with a more direct approach
+                        // Store the index in the button's name to avoid closure issues
+                        entryButton.GameObject.name = $"BusinessButton_{capturedIndex}";
+                        
+                        // Create a completely separate method to handle the click
+                        // This prevents any potential issues with the UI system
+                        int buttonIndex = capturedIndex; // Store in local variable
+                        
+                        // Use a simple action that just updates the selection state and button colors
                         entryButton.OnClick += () => {
-                            Plugin.Logger.LogInfo($"Business button clicked for index {capturedIndex}");
-                            SelectBusiness(capturedIndex);
+                            // Log the click with detailed information
+                            Plugin.Logger.LogInfo($"Business button clicked for index {buttonIndex}, button name: {entryButton.GameObject.name}");
+                            
+                            // IMPORTANT: Only update the selection state and button colors
+                            // Do not call any methods that might refresh the list
+                            if (buttonIndex >= 0 && buttonIndex < availableBusinesses.Count)
+                            {
+                                // Update selection state
+                                selectedBusinessIndex = buttonIndex;
+                                
+                                // Enable purchase button
+                                if (purchaseButton != null && purchaseButton.Component != null)
+                                {
+                                    purchaseButton.Component.interactable = true;
+                                }
+                                
+                                // Update button colors directly
+                                UpdateButtonColors();
+                                
+                                // Log the selection
+                                var selectedBusiness = availableBusinesses[buttonIndex];
+                                string businessName = selectedBusiness.name?.ToString() ?? "Unknown";
+                                Plugin.Logger.LogInfo($"Selected business: {businessName} (ID: {selectedBusiness.id}, Index: {buttonIndex})");
+                            }
                         };
                         
                         // Style the button
@@ -419,10 +461,13 @@ namespace BackInBusiness
         
         private void SelectBusiness(int index)
         {
+            // Add detailed logging to track the selection process
+            Plugin.Logger.LogInfo($"SelectBusiness called with index {index}");
+            
             if (index >= 0 && index < availableBusinesses.Count)
             {
                 // Log selection for debugging
-                Plugin.Logger.LogInfo($"Selecting business at index {index}");
+                Plugin.Logger.LogInfo($"Selecting business at index {index}, current selection: {selectedBusinessIndex}");
                 
                 // Update selection state
                 int previousIndex = selectedBusinessIndex;
@@ -434,15 +479,88 @@ namespace BackInBusiness
                     purchaseButton.Component.interactable = true;
                 }
                 
-                // Clear and recreate all business buttons to update the UI
-                // This ensures the selected button is properly highlighted
-                businessButtons.Clear();
-                RefreshBusinessList();
+                // Update button colors directly without refreshing the list
+                for (int i = 0; i < businessButtons.Count; i++)
+                {
+                    if (i < availableBusinesses.Count)
+                    {
+                        ButtonRef button = businessButtons[i];
+                        if (button != null && button.Component != null)
+                        {
+                            // Update button text color
+                            if (button.ButtonText != null)
+                            {
+                                button.ButtonText.color = (i == selectedBusinessIndex) 
+                                    ? Color.white 
+                                    : new Color(0.9f, 0.9f, 0.9f, 1f);
+                            }
+                            
+                            // Update button background color
+                            ColorBlock colors = button.Component.colors;
+                            if (i == selectedBusinessIndex)
+                            {
+                                // Selected button (blue)
+                                colors.normalColor = new Color(0.3f, 0.5f, 0.7f, 1f);
+                            }
+                            else
+                            {
+                                // Normal button (dark gray)
+                                colors.normalColor = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+                            }
+                            
+                            // Update highlight colors
+                            colors.highlightedColor = new Color(colors.normalColor.r + 0.1f, colors.normalColor.g + 0.1f, colors.normalColor.b + 0.1f, 1f);
+                            colors.pressedColor = new Color(colors.normalColor.r - 0.1f, colors.normalColor.g - 0.1f, colors.normalColor.b - 0.1f, 1f);
+                            button.Component.colors = colors;
+                        }
+                    }
+                }
                 
                 // Log the selection for verification
                 var selectedBusiness = availableBusinesses[index];
                 string name = selectedBusiness.name?.ToString() ?? "Unknown";
                 Plugin.Logger.LogInfo($"Selected business: {name} (ID: {selectedBusiness.id}, Index: {index})");
+            }
+        }
+        
+        // Update button colors without refreshing the list
+        private void UpdateButtonColors()
+        {
+            // Update button colors directly without refreshing the list
+            for (int i = 0; i < businessButtons.Count; i++)
+            {
+                if (i < availableBusinesses.Count)
+                {
+                    ButtonRef button = businessButtons[i];
+                    if (button != null && button.Component != null)
+                    {
+                        // Update button text color
+                        if (button.ButtonText != null)
+                        {
+                            button.ButtonText.color = (i == selectedBusinessIndex) 
+                                ? Color.white 
+                                : new Color(0.9f, 0.9f, 0.9f, 1f);
+                        }
+                        
+                        // Update button background color
+                        ColorBlock colors = button.Component.colors;
+                        if (i == selectedBusinessIndex)
+                        {
+                            // Selected button (blue)
+                            colors.normalColor = new Color(0.3f, 0.5f, 0.7f, 1f);
+                        }
+                        else
+                        {
+                            // Normal button (dark gray)
+                            colors.normalColor = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+                        }
+                        
+                        // Update highlight colors
+                        colors.highlightedColor = new Color(colors.normalColor.r + 0.1f, colors.normalColor.g + 0.1f, colors.normalColor.b + 0.1f, 1f);
+                        colors.pressedColor = new Color(colors.normalColor.r - 0.1f, colors.normalColor.g - 0.1f, colors.normalColor.b - 0.1f, 1f);
+                        button.Component.colors = colors;
+                    }
+                }
             }
         }
         
