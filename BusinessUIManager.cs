@@ -578,16 +578,44 @@ namespace BackInBusiness
                 
                 Plugin.Logger.LogInfo($"Attempting to purchase business: {businessName.name}");
 
-                Player.Instance.AddLocationOfAuthorty(selectedBusiness);
-                Player.Instance.apartmentsOwned.Add(selectedBusiness);
-                Player.Instance.AddToKeyring(selectedBusiness, true);
+                
+                // Get the cost from CompanyPresets array
+                CompanyPresets companyPresets = new CompanyPresets();
+                int cost = 0;
+                string presetName = selectedBusiness.company.preset.name;
+                
+                // Find the matching preset and get its cost
+                for (int i = 0; i < companyPresets.CompanyPresetsList.Length; i++)
+                {
+                    if (presetName == companyPresets.CompanyPresetsList[i].Item1)
+                    {
+                        cost = companyPresets.CompanyPresetsList[i].Item2;
+                        break;
+                    }
+                }
+                
+                // Deduct the cost from player's money
+                if(GameplayController.Instance.money >= cost)
+                {
+                    GameplayController.Instance.AddMoney(-cost, true, $"Purchased business: {selectedBusiness.name}");
+                    availableBusinesses.RemoveAt(selectedBusinessIndex);
+                    businessButtons.RemoveAt(selectedBusinessIndex);
+                    Player.Instance.AddLocationOfAuthorty(selectedBusiness);
+                    Player.Instance.apartmentsOwned.Add(selectedBusiness);
+                    Player.Instance.AddToKeyring(selectedBusiness, true);
 
-                availableBusinesses.RemoveAt(selectedBusinessIndex);
-                businessButtons.RemoveAt(selectedBusinessIndex);
+                    Plugin.Logger.LogInfo($"Deducted ${cost} for purchasing {selectedBusiness.name}");
+                }
+                else
+                {
+                    Lib.GameMessage.ShowPlayerSpeech($"You don't have enough money to purchase {selectedBusiness.name}.", 3, true);
+                }
+
+                
 
                 // For now, just log the action
                 Plugin.Logger.LogInfo($"Purchase initiated for business: {selectedBusiness.name} (ID: {selectedBusiness.id})");
-                Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name}.", 3, true);
+                //Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name}.", 3, true);
                 // Reset selection and refresh list
                 selectedBusinessIndex = -1;
                 purchaseButton.Component.interactable = false;
