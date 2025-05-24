@@ -241,11 +241,18 @@ namespace BackInBusiness
         
         private void CreateBusinessSelectionButtons()
         {
-            // Remove existing selection buttons
+            // Find the button container
             Transform buttonContainer = ContentRoot.transform.Find("ButtonContainer");
             if (buttonContainer == null) return;
             
-            // Find or create selection button container
+            // Find existing selection container and destroy it if it exists
+            Transform existingSelectionContainer = buttonContainer.Find("SelectionButtons");
+            if (existingSelectionContainer != null)
+            {
+                UnityEngine.Object.Destroy(existingSelectionContainer.gameObject);
+            }
+            
+            // Create a new selection button container
             GameObject selectionContainer = UIFactory.CreateHorizontalGroup(buttonContainer.gameObject, "SelectionButtons",
                 true, false, true, true, 5);
             
