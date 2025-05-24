@@ -35,8 +35,9 @@ namespace BackInBusiness
             Logger.LogInfo("Initializing UniverseLib...");
             Universe.Init(5.0f, OnUniverseInit, OnUniverseLog, new UniverseLibConfig()
             {
-                Disable_EventSystem_Override = false,
-                Force_Unlock_Mouse = false
+                Disable_EventSystem_Override = true,
+                Force_Unlock_Mouse = false,
+                Allow_UI_Selection_Outside_UIBase = true,
             });
             
             SaveGamerHandlers.Logger = Logger;

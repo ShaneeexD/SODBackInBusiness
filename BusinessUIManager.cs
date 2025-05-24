@@ -108,26 +108,72 @@ namespace BackInBusiness
                     try
                     {
                         uiEnabled = false;
+                        
+                        // Force any UniverseLib panel resizing to end
+                        UniverseLib.UI.Panels.PanelManager.ForceEndResize();
+                        
+                        // Make sure the panel is fully closed
+                        if (businessPanel != null)
+                        {
+                            businessPanel.SetActive(false);
+                        }
+                        
+                        // Reset the event system
+                        if (UnityEngine.EventSystems.EventSystem.current != null)
+                        {
+                            // First clear selection
+                            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+                            
+                            // Then set focus back to game canvas if it exists
+                            var gameCanvas = UnityEngine.GameObject.Find("GameCanvas");
+                            if (gameCanvas != null)
+                            {
+                                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(gameCanvas);
+                            }
+                        }
+                        
+                        // Reset input through UniverseLib's InputManager instead
+                        UniverseLib.Input.InputManager.ResetInputAxes();
+                        // Re-enable game controls in the correct order
+                        InputController.Instance.enabled = true;
                         Player.Instance.EnableCharacterController(true);
                         Player.Instance.EnablePlayerMouseLook(true, true);
-                        InputController.Instance.enabled = true;
+                        
+                        // Resume the game
                         SessionData sessionData = SessionData.Instance;
                         sessionData.ResumeGame();
+                        
+                        // Lock cursor for game control
                         Cursor.lockState = CursorLockMode.Locked;
+                        Cursor.visible = false;
+                        
+                        // Log the input state
+                        Plugin.Logger.LogInfo("Game input restored, UI closed");
                     }
                     catch (System.Exception ex)
                     {
-                        Plugin.Logger.LogError($"Failed to update mouse control: {ex.Message}");
+                        Plugin.Logger.LogError($"Failed to update input control: {ex.Message}");
                     }
                 }
                 else
                 {
                     uiEnabled = true;
+                    
+                    // Disable game controls
                     Player.Instance.EnablePlayerMouseLook(false, false);
                     Player.Instance.EnableCharacterController(false);
                     InputController.Instance.enabled = false;
+                    
+                    // Pause the game
                     SessionData sessionData = SessionData.Instance;
                     sessionData.PauseGame(false, false, true);
+                    
+                    // Show cursor for UI interaction
+                    Cursor.lockState = CursorLockMode.None;
+                    Cursor.visible = true;
+                    
+                    // Log the input state
+                    Plugin.Logger.LogInfo("Game input disabled, UniverseLib input blocking enabled");
                 }
             }
             catch (System.Exception ex)
