@@ -36,7 +36,7 @@ namespace BackInBusiness
             Universe.Init(5.0f, OnUniverseInit, OnUniverseLog, new UniverseLibConfig()
             {
                 Disable_EventSystem_Override = false,
-                Force_Unlock_Mouse = true
+                Force_Unlock_Mouse = false
             });
             
             SaveGamerHandlers.Logger = Logger;
