@@ -23,21 +23,25 @@ namespace BackInBusiness
         }
 
         // List of all owned businesses
-        public List<BusinessData> OwnedBusinesses { get; private set; } = new List<BusinessData>();
+        public List<OwnedBusinessData> OwnedBusinesses { get; private set; } = new List<OwnedBusinessData>();
         
         // Dictionary to quickly look up businesses by address ID
-        private Dictionary<string, BusinessData> businessLookup = new Dictionary<string, BusinessData>();
+        private Dictionary<string, OwnedBusinessData> businessLookup = new Dictionary<string, OwnedBusinessData>();
 
         // Events
-        public event Action<BusinessData> OnBusinessPurchased;
-        public event Action<BusinessData> OnBusinessSold;
-        public event Action<BusinessData> OnBusinessUpdated;
+        public event Action<OwnedBusinessData> OnBusinessPurchased;
+        public event Action<OwnedBusinessData> OnBusinessSold;
+        public event Action<OwnedBusinessData> OnBusinessUpdated;
         public event Action<int> OnIncomeCollected;
         
         // Timer for income collection
         private float incomeCollectionTimer = 0f;
         private float incomeCollectionInterval = 300f; // 5 minutes in seconds
         private bool incomeCollectionActive = false;
+        public int basePurchasePrice { get; private set; }
+        public int finalPurchasePrice { get; private set; }
+        public int employeeCount { get; private set; }
+        public string floorName { get; private set; }
 
         private BusinessManager()
         {
@@ -60,7 +64,7 @@ namespace BackInBusiness
                 return false;
 
             // Create new business data
-            BusinessData newBusiness = new BusinessData
+            OwnedBusinessData newBusiness = new OwnedBusinessData
             {
                 AddressId = addressId.ToString(), // Convert int to string
                 BusinessName = businessName,
@@ -69,7 +73,7 @@ namespace BackInBusiness
                 PurchaseDate = DateTime.Now,
                 DailyIncome = CalculateBaseIncome(type, address),
                 UpgradeLevel = 0,
-                Employees = new List<string>(),
+                EmployeeCount = 0, // Initialize employee count
                 CustomData = new Dictionary<string, object>()
             };
 
@@ -89,7 +93,7 @@ namespace BackInBusiness
         // Sell a business
         public bool SellBusiness(string addressId, int sellingPrice)
         {
-            if (!businessLookup.TryGetValue(addressId, out BusinessData business))
+            if (!businessLookup.TryGetValue(addressId, out OwnedBusinessData business))
                 return false;
 
             // Remove from collections
@@ -106,12 +110,13 @@ namespace BackInBusiness
         }
 
         // Get a business by address ID
-        public List<NewAddress> GetBusinessByAddressId()
+        public List<BusinessInfo> GetBusinessByAddressId()
         {
             try
             {
-                List<NewAddress> businesses = new List<NewAddress>();
+                List<BusinessInfo> businesses = new List<BusinessInfo>();
                 List<NewAddress> ownedBusinesses = new List<NewAddress>();
+                Dictionary<NewAddress, bool> processedBusinesses = new Dictionary<NewAddress, bool>();
                 
                 if (CityData.Instance == null)
                 {
@@ -134,34 +139,20 @@ namespace BackInBusiness
                 
                 foreach (Citizen citizen in CityData.Instance.citizenDirectory)
                 {
-                    if (citizen == null)
-                    {
-                        continue;
-                    }
-                    
-                    if (citizen.job == null)
-                    {
-                        continue;
-                    }
-                    
-                    if (citizen.job.employer == null)
-                    {
-                        continue;
-                    }
-                    
-                    if (citizen.job.employer.placeOfBusiness == null)
-                    {
-                        continue;
-                    }
-                    
-                    if (citizen.job.employer.placeOfBusiness.thisAsAddress == null)
+                    if (citizen == null || 
+                        citizen.job == null || 
+                        citizen.job.employer == null || 
+                        citizen.job.employer.placeOfBusiness == null || 
+                        citizen.job.employer.placeOfBusiness.thisAsAddress == null)
                     {
                         continue;
                     }
 
-                    if (ownedBusinesses.Contains(citizen.job.employer.placeOfBusiness.thisAsAddress))
+                    NewAddress businessAddress = citizen.job.employer.placeOfBusiness.thisAsAddress;
+
+                    if (ownedBusinesses.Contains(businessAddress))
                     {
-                        Plugin.Logger.LogInfo($"Skipping owned business {citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString()}");
+                        Plugin.Logger.LogInfo($"Skipping owned business {businessAddress.name?.ToString()}");
                         continue;
                     }
                     
@@ -169,16 +160,16 @@ namespace BackInBusiness
                     {
                         if (citizen.home != null && citizen.home.thisAsAddress != null)
                         {
-                            if (citizen.job.employer.placeOfBusiness.thisAsAddress.id == citizen.home.thisAsAddress.id)
+                            if (businessAddress.id == citizen.home.thisAsAddress.id)
                             {
-                                string businessName = citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString() ?? "Unknown";
+                                string businessName = businessAddress.name?.ToString() ?? "Unknown";
                                 string citizenName = citizen.name?.ToString() ?? "Unknown";
                                 Plugin.Logger.LogInfo($"Skipping self-employed business at home: {businessName} for {citizenName}");
                                 continue;
                             }
                         }
                         
-                        string bName = citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString() ?? "";
+                        string bName = businessAddress.name?.ToString() ?? "";
                         string cName = citizen.name?.ToString() ?? "";
                         
                         if (!string.IsNullOrEmpty(cName) && 
@@ -196,26 +187,50 @@ namespace BackInBusiness
                     }
                     
                     // Check if we already have this business
-                    if (businesses.Contains(citizen.job.employer.placeOfBusiness.thisAsAddress))
+                    if (processedBusinesses.ContainsKey(businessAddress))
                     {
-                        Plugin.Logger.LogInfo($"Skipping duplicate business {citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString() ?? "Unknown"}");
+                        Plugin.Logger.LogInfo($"Skipping duplicate business {businessAddress.name?.ToString() ?? "Unknown"}");
                         continue;
                     }
                     
+                    // Mark this business as processed
+                    processedBusinesses[businessAddress] = true;
                     
-                    // Add the business to our list
-                    businesses.Add(citizen.job.employer.placeOfBusiness.thisAsAddress);
+                    // Get employee count and floor name
+                    int employeeCount = 0;
+                    string floorName = "";
                     
-                    Plugin.Logger.LogInfo($"Found business {citizen.job.employer.placeOfBusiness.thisAsAddress.name?.ToString() ?? "Unknown"}");
+                    try
+                    {
+                        if (businessAddress.company != null && businessAddress.company.companyRoster != null)
+                        {
+                            employeeCount = businessAddress.company.companyRoster.Count;
+                        }
+                        
+                        if (businessAddress.floor != null)
+                        {
+                            floorName = businessAddress.floor.name;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Logger.LogWarning($"Error getting employee count or floor name: {ex.Message}");
+                    }
+
+                    // Create a BusinessData object and add it to our list
+                    BusinessInfo businessData = new BusinessInfo(businessAddress, employeeCount, floorName);
+                    businesses.Add(businessData);
+                    
+                    Plugin.Logger.LogInfo($"Found business {businessAddress.name?.ToString() ?? "Unknown"} with {employeeCount} employees on floor {floorName}");
                 }
 
-                //Plugin.Logger.LogInfo($"Found {businesses.Count} unique businesses");
+                Plugin.Logger.LogInfo($"Found {businesses.Count} unique businesses");
                 return businesses;
             }
             catch (Exception ex)
             {
                 Plugin.Logger.LogError($"Error in GetBusinessByAddressId: {ex.Message}\n{ex.StackTrace}");
-                return new List<NewAddress>();
+                return new List<BusinessInfo>();
             }
         }
 
@@ -226,7 +241,7 @@ namespace BackInBusiness
         }
 
         // Update business data
-        public void UpdateBusiness(BusinessData business)
+        public void UpdateBusiness(OwnedBusinessData business)
         {
             if (business == null || !businessLookup.ContainsKey(business.AddressId))
                 return;
@@ -242,7 +257,7 @@ namespace BackInBusiness
         }
 
         // Calculate daily income for a business
-        public int CalculateDailyIncome(BusinessData business)
+        public int CalculateDailyIncome(OwnedBusinessData business)
         {
             if (business == null)
                 return 0;
@@ -254,7 +269,7 @@ namespace BackInBusiness
             float upgradeMultiplier = 1.0f + (business.UpgradeLevel * 0.2f);
             
             // Apply employee bonus
-            float employeeBonus = business.Employees.Count * 10;
+            float employeeBonus = business.EmployeeCount * 10;
             
             // Calculate final income
             return Mathf.RoundToInt(baseIncome * upgradeMultiplier + employeeBonus);
@@ -357,7 +372,7 @@ namespace BackInBusiness
                 if (File.Exists(savePath))
                 {
                     string json = File.ReadAllText(savePath);
-                    OwnedBusinesses = JsonConvert.DeserializeObject<List<BusinessData>>(json) ?? new List<BusinessData>();
+                    OwnedBusinesses = JsonConvert.DeserializeObject<List<OwnedBusinessData>>(json) ?? new List<OwnedBusinessData>();
                     
                     // Rebuild lookup dictionary
                     businessLookup.Clear();
@@ -370,14 +385,14 @@ namespace BackInBusiness
                 }
                 else
                 {
-                    OwnedBusinesses = new List<BusinessData>();
+                    OwnedBusinesses = new List<OwnedBusinessData>();
                     businessLookup.Clear();
                     Plugin.Logger.LogInfo("No business data file found, starting fresh");
                 }
             }
             catch (Exception ex)
             {
-                OwnedBusinesses = new List<BusinessData>();
+                OwnedBusinesses = new List<OwnedBusinessData>();
                 businessLookup.Clear();
                 Plugin.Logger.LogError($"Failed to load business data: {ex.Message}");
             }
@@ -398,7 +413,7 @@ namespace BackInBusiness
 
     // Business data class
     [Serializable]
-    public class BusinessData
+    public class OwnedBusinessData
     {
         // Core data
         public string AddressId { get; set; }
@@ -411,7 +426,8 @@ namespace BackInBusiness
         // Business stats
         public int DailyIncome { get; set; }
         public int UpgradeLevel { get; set; }
-        public List<string> Employees { get; set; } = new List<string>();
+        public int EmployeeCount { get; set; } // Renamed from EmployeesCount to match BusinessData class
+        public string FloorName { get; set; }
         
         // Custom data for different business types
         public Dictionary<string, object> CustomData { get; set; } = new Dictionary<string, object>();

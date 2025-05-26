@@ -186,13 +186,13 @@ namespace BackInBusiness
     // Custom panel class for business UI
     public class BusinessPanel : PanelBase
     {
+        private List<BusinessInfo> availableBusinesses;
+        private List<ButtonRef> businessButtons = new List<ButtonRef>();
+        private int selectedBusinessIndex = -1;
         private GameObject businessListContainer;
-        private List<NewAddress> availableBusinesses = new List<NewAddress>();
-        private ButtonRef refreshButton;
         private ButtonRef purchaseButton;
         private ButtonRef closeButton;
-        private int selectedBusinessIndex = -1;
-        private List<ButtonRef> businessButtons = new List<ButtonRef>();
+        private ButtonRef refreshButton;
         
         // Required abstract properties
         public override string Name => "Business Management";
@@ -361,7 +361,8 @@ namespace BackInBusiness
                     // Create buttons for each business
                     for (int i = 0; i < availableBusinesses.Count; i++)
                     {
-                        var business = availableBusinesses[i];
+                        var businessData = availableBusinesses[i];
+                        var business = businessData.Address; // Get the actual NewAddress object
                         string name = business.name?.ToString() ?? "Unknown";
                         string id = business.id.ToString();
                         string buttonText = null;
@@ -378,9 +379,48 @@ namespace BackInBusiness
                         {
                             if (presetName == companyPresets.CompanyPresetsList[j].Item1)
                             {
-                                // Found matching preset, add cost to button text
-                                int cost = companyPresets.CompanyPresetsList[j].Item2;
-                                buttonText = $"{i + 1}. {name} (ID: {id}, Cost: ${cost})";
+                                // Found matching preset, calculate cost with employee count
+                                int baseCost = companyPresets.CompanyPresetsList[j].Item2;
+                                int employeeCount = businessData.EmployeeCount;
+                                int employeeCost = employeeCount * 250; // Each employee adds $250
+                                
+                                // Apply floor multiplier for office and laboratory type businesses
+                                int floorMultiplier = 0;
+                                string floorName = businessData.FloorName;
+                                string presetType = companyPresets.CompanyPresetsList[j].Item1;
+                                int floorNumber = 0;
+                                
+                                // Check if this is an office or laboratory type that should have floor multiplier
+                                if (presetType == "IndustrialOffice" || presetType == "MediumOffice" || presetType == "Laboratory")
+                                {
+                                    // Extract floor number from the floor name (in parentheses at the end)
+                                    if (floorName.Contains("(Floor "))
+                                    {
+                                        int startIndex = floorName.LastIndexOf("(Floor ") + 7;
+                                        int endIndex = floorName.LastIndexOf(")");
+                                        if (endIndex > startIndex)
+                                        {
+                                            string floorNumberStr = floorName.Substring(startIndex, endIndex - startIndex);
+                                            if (int.TryParse(floorNumberStr, out floorNumber))
+                                            {
+                                                // Apply multiplier based on floor number
+                                                // Higher floors cost more (positive floors)
+                                                // Lower floors (basement) cost less (negative floors)
+                                                floorMultiplier = floorNumber * 500; // $500 per floor level
+                                                
+                                                // Ensure minimum floor cost is 0 (don't give discounts for basements)
+                                                floorMultiplier = System.Math.Max(0, floorMultiplier);
+                                                
+                                                Plugin.Logger.LogInfo($"Applied floor multiplier of {floorMultiplier} for {presetType} on floor {floorNumber}");
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                int totalCost = baseCost + employeeCost + floorMultiplier;
+                                
+                                // Format the button text with all relevant information
+                                buttonText = $"{i + 1}. {name} (ID: {id}, Employees: {employeeCount}, Floor: {floorNumber}, Cost: {totalCost} Crows)";
                                 break; // Exit loop once we find a match
                             }
                         }
@@ -416,9 +456,10 @@ namespace BackInBusiness
                                 UpdateButtonColors();
                                 
                                 // Log the selection
-                                var selectedBusiness = availableBusinesses[buttonIndex];
+                                var selectedBusinessData = availableBusinesses[buttonIndex];
+                                var selectedBusiness = selectedBusinessData.Address;
                                 string businessName = selectedBusiness.name?.ToString() ?? "Unknown";
-                                Plugin.Logger.LogInfo($"Selected business: {businessName} (ID: {selectedBusiness.id}, Index: {buttonIndex})");
+                                Plugin.Logger.LogInfo($"Selected business: {businessName} (ID: {selectedBusiness.id}, Employees: {selectedBusinessData.EmployeeCount}, Index: {buttonIndex})");
                             }
                         };
                         
@@ -562,9 +603,10 @@ namespace BackInBusiness
                 }
                 
                 // Log the selection for verification
-                var selectedBusiness = availableBusinesses[index];
+                var selectedBusinessData = availableBusinesses[index];
+                var selectedBusiness = selectedBusinessData.Address;
                 string name = selectedBusiness.name?.ToString() ?? "Unknown";
-                Plugin.Logger.LogInfo($"Selected business: {name} (ID: {selectedBusiness.id}, Index: {index})");
+                Plugin.Logger.LogInfo($"Selected business: {name} (ID: {selectedBusiness.id}, Employees: {selectedBusinessData.EmployeeCount}, Index: {index})");
             }
         }
         
@@ -619,49 +661,86 @@ namespace BackInBusiness
             
             try
             {
-                var selectedBusiness = availableBusinesses[selectedBusinessIndex];
-                NewAddress businessName = selectedBusiness;
+                var selectedBusinessData = availableBusinesses[selectedBusinessIndex];
+                NewAddress selectedBusiness = selectedBusinessData.Address;
                 
-                Plugin.Logger.LogInfo($"Attempting to purchase business: {businessName.name}");
+                Plugin.Logger.LogInfo($"Attempting to purchase business: {selectedBusiness.name}");
 
-                
                 // Get the cost from CompanyPresets array
                 CompanyPresets companyPresets = new CompanyPresets();
-                int cost = 0;
+                int baseCost = 0;
                 string presetName = selectedBusiness.company.preset.name;
                 
-                // Find the matching preset and get its cost
+                // Find the matching preset and get its base cost
                 for (int i = 0; i < companyPresets.CompanyPresetsList.Length; i++)
                 {
                     if (presetName == companyPresets.CompanyPresetsList[i].Item1)
                     {
-                        cost = companyPresets.CompanyPresetsList[i].Item2;
+                        baseCost = companyPresets.CompanyPresetsList[i].Item2;
                         break;
                     }
                 }
                 
-                // Deduct the cost from player's money
-                if(GameplayController.Instance.money >= cost)
+                // Calculate final cost based on employee count and floor number
+                int employeeCount = selectedBusinessData.EmployeeCount;
+                int employeeCost = employeeCount * 250; // Each employee adds $250 to the cost
+                
+                // Apply floor multiplier for office and laboratory type businesses
+                int floorMultiplier = 0;
+                string floorName = selectedBusinessData.FloorName;
+                
+                // Check if this is an office or laboratory type that should have floor multiplier
+                if (presetName == "IndustrialOffice" || presetName == "MediumOffice" || presetName == "Laboratory")
                 {
-                    GameplayController.Instance.AddMoney(-cost, true, $"Purchased business: {selectedBusiness.name}");
+                    // Extract floor number from the floor name (in parentheses at the end)
+                    if (floorName.Contains("(Floor "))
+                    {
+                        int startIndex = floorName.LastIndexOf("(Floor ") + 7;
+                        int endIndex = floorName.LastIndexOf(")");
+                        if (endIndex > startIndex)
+                        {
+                            string floorNumberStr = floorName.Substring(startIndex, endIndex - startIndex);
+                            if (int.TryParse(floorNumberStr, out int floorNumber))
+                            {
+                                // Apply multiplier based on floor number
+                                // Higher floors cost more (positive floors)
+                                // Lower floors (basement) cost less (negative floors)
+                                floorMultiplier = floorNumber * 1000; // $1000 per floor level
+                                
+                                // Ensure minimum floor cost is 0 (don't give discounts for basements)
+                                floorMultiplier = System.Math.Max(0, floorMultiplier);
+                                
+                                Plugin.Logger.LogInfo($"Applied floor multiplier of {floorMultiplier} for {presetName} on floor {floorNumber}");
+                            }
+                        }
+                    }
+                }
+                
+                int finalCost = baseCost + employeeCost + floorMultiplier;
+                
+                Plugin.Logger.LogInfo($"Business cost calculation: Base cost {baseCost} + Employee cost ({employeeCost} for {employeeCount} employees) + Floor multiplier ({floorMultiplier}) = {finalCost} Crows");
+                
+                // Deduct the cost from player's money
+                if(GameplayController.Instance.money >= finalCost)
+                {
+                    GameplayController.Instance.AddMoney(-finalCost, true, $"Purchased business: {selectedBusiness.name}");
                     availableBusinesses.RemoveAt(selectedBusinessIndex);
                     businessButtons.RemoveAt(selectedBusinessIndex);
                     Player.Instance.AddLocationOfAuthorty(selectedBusiness);
                     Player.Instance.apartmentsOwned.Add(selectedBusiness);
                     Player.Instance.AddToKeyring(selectedBusiness, true);
 
-                    Plugin.Logger.LogInfo($"Deducted ${cost} for purchasing {selectedBusiness.name}");
+                    Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {selectedBusiness.name}");
+                    Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name} for {finalCost} Crows.", 3, true);
                 }
                 else
                 {
-                    Lib.GameMessage.ShowPlayerSpeech($"You don't have enough money to purchase {selectedBusiness.name}.", 3, true);
+                    Lib.GameMessage.ShowPlayerSpeech($"You don't have enough money to purchase {selectedBusiness.name}. Cost: {finalCost} Crows", 3, true);
                 }
 
-                
-
-                // For now, just log the action
+                // Log the action
                 Plugin.Logger.LogInfo($"Purchase initiated for business: {selectedBusiness.name} (ID: {selectedBusiness.id})");
-                //Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name}.", 3, true);
+                
                 // Reset selection and refresh list
                 selectedBusinessIndex = -1;
                 purchaseButton.Component.interactable = false;

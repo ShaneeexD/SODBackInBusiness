@@ -49,9 +49,9 @@ public class SaveGamerHandlers
             // Log some details about the businesses
             foreach (var business in businesses)
             {
-                if (business != null && business.name != null)
+                if (business != null && business.Address != null && business.Address.name != null)
                 {
-                    BackInBusiness.Plugin.Logger.LogInfo($"Business: {business.name}, ID: {business.id}");
+                    BackInBusiness.Plugin.Logger.LogInfo($"Business: {business.Address.name}, ID: {business.Address.id}, Employees: {business.EmployeeCount}, Floor: {business.FloorName}");
                 }
             }
         }
