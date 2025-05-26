@@ -866,12 +866,13 @@ namespace BackInBusiness
                     string purchasedBusinessName = selectedBusiness.name?.ToString() ?? "Unknown";
                     
                     Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {purchasedBusinessName}");
-                    
+                    BusinessUIManager.Instance.ToggleBusinessUI();
                     // Display business purchase notification and queue the broadcast notification to show after
                     DisplayBusinessPurchaseWithCallback(purchasedBusinessName);
                 }
                 else
                 {
+                    BusinessUIManager.Instance.ToggleBusinessUI();
                     Lib.GameMessage.Broadcast($"You don't have enough money to purchase {selectedBusiness.name}. Cost: {finalCost} Crows", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.white);
                 }
 
