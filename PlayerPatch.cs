@@ -52,6 +52,12 @@ namespace BackInBusiness
             {
                 Plugin.Logger.LogError($"Error in PlayerPatch.Prefix: {ex.Message}\n{ex.StackTrace}");
             }
+
+            if(!BusinessUIManager.uiEnabled && !MainMenuController.Instance.mainMenuActive && !Paused.IsPaused)
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+            }
         }
         
         // Toggle the business UI

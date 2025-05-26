@@ -9,13 +9,18 @@ using BackInBusiness;
 
 namespace BackInBusiness
 {
+    public class Paused
+    {
+        public static bool IsPaused { get; set; }
+    }
+    
     [HarmonyPatch(typeof(SessionData))]
     [HarmonyPatch("PauseGame")]
     public class PauseManager
     {
-        public static void Prefix(ref bool showPauseText, ref bool delayOverride, ref bool openDesktopMode)
+        public static void Prefix()
         {
-       
+            Paused.IsPaused = true;
         }
     }
 
@@ -25,7 +30,9 @@ namespace BackInBusiness
     {
         public static void Prefix() 
         {
-            
+            Paused.IsPaused = false;
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
         }
     }
 }
