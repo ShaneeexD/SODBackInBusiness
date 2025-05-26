@@ -38,9 +38,8 @@ namespace BackInBusiness
                 if (isKeyPressed && !wasKeyPressed)
                 {
                     // Make sure we're not in a menu,in bed or paused
-                    if (MainMenuController.Instance.mainMenuActive == false && __instance.isInBed == false && !Paused.IsPaused)
+                    if (MainMenuController.Instance.mainMenuActive == false && __instance.isInBed == false)
                     {
-                        // Toggle the business UI
                         ToggleBusinessUI();
                     }
                 }

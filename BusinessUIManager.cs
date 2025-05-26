@@ -105,9 +105,10 @@ namespace BackInBusiness
 
                 if(!businessPanel.Enabled)
                 {
+                    uiEnabled = false;
                     try
                     {
-                        uiEnabled = false;
+                        
                         
                         // Force any UniverseLib panel resizing to end
                         UniverseLib.UI.Panels.PanelManager.ForceEndResize();
@@ -662,8 +663,8 @@ namespace BackInBusiness
             }
         }
         
-        // Custom method to display the business purchase notification
-        private void DisplayBusinessPurchase()
+        // Custom method to display the business purchase notification with a callback for the broadcast
+        private void DisplayBusinessPurchaseWithCallback(string businessName)
         {
             try
             {
@@ -671,7 +672,7 @@ namespace BackInBusiness
                 AudioController.Instance.Play2DSound(AudioControls.Instance.newApartment, null, 1f);
                 
                 // Set the text directly
-                InterfaceControls.Instance.caseSolvedText.text = "New Business";
+                InterfaceControls.Instance.caseSolvedText.text ="New Business";
                 
                 // Setup for animation
                 CanvasRenderer rend = InterfaceControls.Instance.caseSolvedText.canvasRenderer;
@@ -688,17 +689,27 @@ namespace BackInBusiness
                 
                 Plugin.Logger.LogInfo("Displayed business purchase notification");
                 
-                // Use UniverseLib's Runtime Coroutine to animate and hide the text
-                UniverseLib.RuntimeHelper.StartCoroutine(AnimateBusinessPurchaseText());
+                // Use UniverseLib's Runtime Coroutine to animate and hide the text, then show the broadcast
+                UniverseLib.RuntimeHelper.StartCoroutine(AnimateBusinessPurchaseTextWithBroadcast(businessName));
             }
             catch (System.Exception ex)
             {
                 Plugin.Logger.LogError($"Error displaying business purchase notification: {ex.Message}\n{ex.StackTrace}");
+                
+                // If there's an error, still show the broadcast as a fallback
+                Lib.GameMessage.Broadcast($"New business purchased: {businessName}", 
+                    InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.white);
             }
         }
         
-        // Coroutine to animate and hide the business purchase text
-        private System.Collections.IEnumerator AnimateBusinessPurchaseText()
+        // Original method kept for compatibility
+        private void DisplayBusinessPurchase()
+        {
+            DisplayBusinessPurchaseWithCallback("Unknown");
+        }
+        
+        // Coroutine to animate the business purchase text and then show the broadcast notification
+        private System.Collections.IEnumerator AnimateBusinessPurchaseTextWithBroadcast(string businessName)
         {
             float duration = 5.5f; // Total animation duration
             float timer = duration;
@@ -745,6 +756,18 @@ namespace BackInBusiness
             }
             
             Plugin.Logger.LogInfo("Hidden business purchase notification");
+            
+            // Now that the animation is complete, show the broadcast notification
+            Lib.GameMessage.Broadcast($"New business purchased: {businessName}", 
+                InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.white);
+            
+            Plugin.Logger.LogInfo($"Showed broadcast notification for {businessName}");
+        }
+        
+        // Original animation method kept for compatibility
+        private System.Collections.IEnumerator AnimateBusinessPurchaseText()
+        {
+            return AnimateBusinessPurchaseTextWithBroadcast("Unknown");
         }
         
         private void PurchaseSelectedBusiness()
@@ -839,12 +862,13 @@ namespace BackInBusiness
                     Player.Instance.apartmentsOwned.Add(selectedBusiness);
                     Player.Instance.AddToKeyring(selectedBusiness, false);
 
-                    // Display business purchase notification
-                    DisplayBusinessPurchase();
-
-                    Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {selectedBusiness.name}");
-                    //Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name} for {finalCost} Crows.", 3, true);
-                    Lib.GameMessage.Broadcast($"New business purchased: {selectedBusiness.name}", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.green);
+                    // Store business name for the broadcast notification
+                    string purchasedBusinessName = selectedBusiness.name?.ToString() ?? "Unknown";
+                    
+                    Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {purchasedBusinessName}");
+                    
+                    // Display business purchase notification and queue the broadcast notification to show after
+                    DisplayBusinessPurchaseWithCallback(purchasedBusinessName);
                 }
                 else
                 {
