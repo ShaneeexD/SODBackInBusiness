@@ -388,7 +388,18 @@ namespace BackInBusiness
                                 int floorMultiplier = 0;
                                 string floorName = businessData.FloorName;
                                 string presetType = companyPresets.CompanyPresetsList[j].Item1;
+                                string businessType = "Unknown";
                                 int floorNumber = 0;
+                                
+                                // Get the friendly business type name from the mapping
+                                for (int k = 0; k < companyPresets.CompanyPresetsMapping.Length; k++)
+                                {
+                                    if (presetType == companyPresets.CompanyPresetsMapping[k].Item1)
+                                    {
+                                        businessType = companyPresets.CompanyPresetsMapping[k].Item2;
+                                        break;
+                                    }
+                                }
                                 
                                 // Check if this is an office or laboratory type that should have floor multiplier
                                 if (presetType == "IndustrialOffice" || presetType == "MediumOffice" || presetType == "Laboratory")
@@ -420,7 +431,7 @@ namespace BackInBusiness
                                 int totalCost = baseCost + employeeCost + floorMultiplier;
                                 
                                 // Format the button text with all relevant information
-                                buttonText = $"{i + 1}. {name} (ID: {id}, Employees: {employeeCount}, Floor: {floorNumber}, Cost: {totalCost} Crows)";
+                                buttonText = $"{i + 1}. {name} | Type: {businessType} | Employees: {employeeCount} | Cost: {totalCost} Crows";
                                 break; // Exit loop once we find a match
                             }
                         }
@@ -670,6 +681,7 @@ namespace BackInBusiness
                 CompanyPresets companyPresets = new CompanyPresets();
                 int baseCost = 0;
                 string presetName = selectedBusiness.company.preset.name;
+                string businessType = "Unknown";
                 
                 // Find the matching preset and get its base cost
                 for (int i = 0; i < companyPresets.CompanyPresetsList.Length; i++)
@@ -680,6 +692,18 @@ namespace BackInBusiness
                         break;
                     }
                 }
+                
+                // Get the friendly business type name from the mapping
+                for (int i = 0; i < companyPresets.CompanyPresetsMapping.Length; i++)
+                {
+                    if (presetName == companyPresets.CompanyPresetsMapping[i].Item1)
+                    {
+                        businessType = companyPresets.CompanyPresetsMapping[i].Item2;
+                        break;
+                    }
+                }
+                
+                Plugin.Logger.LogInfo($"Business type: {businessType} (preset: {presetName})");
                 
                 // Calculate final cost based on employee count and floor number
                 int employeeCount = selectedBusinessData.EmployeeCount;

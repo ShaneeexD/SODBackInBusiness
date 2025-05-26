@@ -39,5 +39,35 @@ namespace BackInBusiness
             ("WeaponsDealer", 30000),
             ("WorkplaceCanteen", 2000)
         };
+
+        public (string, string)[] CompanyPresetsMapping = {
+            ("AmericanDiner", "American Diner"),
+            ("Ballroom", "Hotel"),
+            ("Bar", "Bar"),
+            ("BlackmarketSyncClinic", "BM Sync Clinic"),
+            ("BlackmarketTrader", "BM Trader"),
+            ("BuildingManagement", "Building Management"),
+            ("Chemist", "Pharmacy"),
+            ("ChineseEatery", "Chinese Restaurant"),
+            ("CityHall", "City Hall"),
+            ("EnforcerBranch", "Enforcer Branch"),
+            ("FastFood", "Fast Food"),
+            ("GamblingDen", "Gambling Den"),
+            ("HardwareStore", "Hardware Store"),
+            ("HospitalWing", "Hospital Wing"),
+            ("IndustrialOffice", "Industrial Office"),
+            ("IndustrialPlant", "Industrial Plant"),
+            ("Laboratory", "Laboratory"),
+            ("Landlord", "Landlord"),
+            ("Launderette", "Launderette"),
+            ("LoanShark", "Loan Shark"),
+            ("MediumOffice", "Office"),
+            ("PawnShop", "Pawn Shop"),
+            ("StreetFoodVendorSnacks", "Street Vendor"),
+            ("Supermarket", "Supermarket"),
+            ("SyncClinic", "Sync Clinic"),
+            ("WeaponsDealer", "Weapons Dealer"),
+            ("WorkplaceCanteen", "Workplace Canteen")
+        };
     }
 }
