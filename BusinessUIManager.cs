@@ -662,6 +662,91 @@ namespace BackInBusiness
             }
         }
         
+        // Custom method to display the business purchase notification
+        private void DisplayBusinessPurchase()
+        {
+            try
+            {
+                // Play the purchase sound
+                AudioController.Instance.Play2DSound(AudioControls.Instance.newApartment, null, 1f);
+                
+                // Set the text directly
+                InterfaceControls.Instance.caseSolvedText.text = "New Business";
+                
+                // Setup for animation
+                CanvasRenderer rend = InterfaceControls.Instance.caseSolvedText.canvasRenderer;
+                rend.SetAlpha(0); // Start fully transparent
+                
+                // Make the text visible
+                InterfaceControls.Instance.caseSolvedText.gameObject.SetActive(true);
+                
+                // Enable other UI elements that are part of the notification
+                foreach (CanvasRenderer renderer in InterfaceControls.Instance.screenMessageFadeRenderers)
+                {
+                    renderer.SetAlpha(0); // Start fully transparent
+                }
+                
+                Plugin.Logger.LogInfo("Displayed business purchase notification");
+                
+                // Use UniverseLib's Runtime Coroutine to animate and hide the text
+                UniverseLib.RuntimeHelper.StartCoroutine(AnimateBusinessPurchaseText());
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error displaying business purchase notification: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
+        // Coroutine to animate and hide the business purchase text
+        private System.Collections.IEnumerator AnimateBusinessPurchaseText()
+        {
+            float duration = 5.5f; // Total animation duration
+            float timer = duration;
+            CanvasRenderer rend = InterfaceControls.Instance.caseSolvedText.canvasRenderer;
+            
+            // Animation loop
+            while (timer > 0f)
+            {
+                timer -= UnityEngine.Time.deltaTime;
+                float progress = (duration - timer) / duration; // 0 to 1
+                
+                // Fade in during first 40% of animation
+                if (progress <= 0.4f)
+                {
+                    foreach (CanvasRenderer renderer in InterfaceControls.Instance.screenMessageFadeRenderers)
+                    {
+                        renderer.SetAlpha(progress / 0.4f); // 0 to 1
+                    }
+                }
+                // Fade out during last 20% of animation
+                else if (progress >= 0.8f)
+                {
+                    foreach (CanvasRenderer renderer in InterfaceControls.Instance.screenMessageFadeRenderers)
+                    {
+                        renderer.SetAlpha(1f - (progress - 0.8f) / 0.2f); // 1 to 0
+                    }
+                }
+                
+                // Apply text animations from the game's animation curves
+                rend.SetAlpha(InterfaceControls.Instance.caseSolvedAlphaAnim.Evaluate(1f - progress));
+                InterfaceControls.Instance.caseSolvedText.characterSpacing = 
+                    InterfaceControls.Instance.caseSolvedKerningAnim.Evaluate(progress);
+                
+                yield return null; // Wait for next frame
+            }
+            
+            // Hide the text when animation is complete
+            InterfaceControls.Instance.caseSolvedText.gameObject.SetActive(false);
+            
+            // Reset all renderers to invisible
+            foreach (CanvasRenderer renderer in InterfaceControls.Instance.screenMessageFadeRenderers)
+            {
+                renderer.SetAlpha(0);
+            }
+            
+            Plugin.Logger.LogInfo("Hidden business purchase notification");
+        }
+        
         private void PurchaseSelectedBusiness()
         {
             if (selectedBusinessIndex < 0 || selectedBusinessIndex >= availableBusinesses.Count)
@@ -754,8 +839,9 @@ namespace BackInBusiness
                     Player.Instance.apartmentsOwned.Add(selectedBusiness);
                     Player.Instance.AddToKeyring(selectedBusiness, false);
 
-                   // Lib.DdsStrings.AddOrUpdate("BackInBusiness", "businessPurchase", "New business purchased");
-                    //InterfaceController.Instance.DisplayMissionEndText("businessPurchase", null);
+                    // Display business purchase notification
+                    DisplayBusinessPurchase();
+
                     Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {selectedBusiness.name}");
                     //Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name} for {finalCost} Crows.", 3, true);
                     Lib.GameMessage.Broadcast($"New business purchased: {selectedBusiness.name}", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.green);

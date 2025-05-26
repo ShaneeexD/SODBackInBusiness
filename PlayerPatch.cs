@@ -37,8 +37,8 @@ namespace BackInBusiness
                 // Only toggle on key down (when it transitions from not pressed to pressed)
                 if (isKeyPressed && !wasKeyPressed)
                 {
-                    // Make sure we're not in a menu or in bed
-                    if (MainMenuController.Instance.mainMenuActive == false && __instance.isInBed == false)
+                    // Make sure we're not in a menu,in bed or paused
+                    if (MainMenuController.Instance.mainMenuActive == false && __instance.isInBed == false && !Paused.IsPaused)
                     {
                         // Toggle the business UI
                         ToggleBusinessUI();
