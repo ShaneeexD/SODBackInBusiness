@@ -752,14 +752,17 @@ namespace BackInBusiness
                     businessButtons.RemoveAt(selectedBusinessIndex);
                     Player.Instance.AddLocationOfAuthorty(selectedBusiness);
                     Player.Instance.apartmentsOwned.Add(selectedBusiness);
-                    Player.Instance.AddToKeyring(selectedBusiness, true);
+                    Player.Instance.AddToKeyring(selectedBusiness, false);
 
+                   // Lib.DdsStrings.AddOrUpdate("BackInBusiness", "businessPurchase", "New business purchased");
+                    //InterfaceController.Instance.DisplayMissionEndText("businessPurchase", null);
                     Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {selectedBusiness.name}");
-                    Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name} for {finalCost} Crows.", 3, true);
+                    //Lib.GameMessage.ShowPlayerSpeech($"Successfully purchased {selectedBusiness.name} for {finalCost} Crows.", 3, true);
+                    Lib.GameMessage.Broadcast($"New business purchased: {selectedBusiness.name}", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.green);
                 }
                 else
                 {
-                    Lib.GameMessage.ShowPlayerSpeech($"You don't have enough money to purchase {selectedBusiness.name}. Cost: {finalCost} Crows", 3, true);
+                    Lib.GameMessage.Broadcast($"You don't have enough money to purchase {selectedBusiness.name}. Cost: {finalCost} Crows", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.white);
                 }
 
                 // Log the action
