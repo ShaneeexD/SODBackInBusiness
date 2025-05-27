@@ -187,6 +187,22 @@ namespace BackInBusiness
     // Custom panel class for business UI
     public class BusinessPanel : PanelBase
     {
+        // Panel states
+        private enum PanelState
+        {
+            MainMenu,
+            PurchaseBusiness,
+            OwnedBusinesses
+        }
+        
+        private PanelState currentState = PanelState.MainMenu;
+        
+        // UI containers for different states
+        private GameObject mainMenuContainer;
+        private GameObject purchaseBusinessContainer;
+        private GameObject ownedBusinessesContainer;
+        
+        // Purchase business elements
         private List<BusinessInfo> availableBusinesses;
         private List<ButtonRef> businessButtons = new List<ButtonRef>();
         private int selectedBusinessIndex = -1;
@@ -194,6 +210,10 @@ namespace BackInBusiness
         private ButtonRef purchaseButton;
         private ButtonRef closeButton;
         private ButtonRef refreshButton;
+        
+        // Owned businesses elements
+        public static List<OwnedBusinessData> ownedBusinesses;
+        private GameObject ownedBusinessListContainer;
         
         // Required abstract properties
         public override string Name => "Business Management";
@@ -206,71 +226,74 @@ namespace BackInBusiness
         
         protected override void ConstructPanelContent()
         {
-            // Create title
-            Text titleText = UIFactory.CreateLabel(ContentRoot, "TitleText", "Available Businesses", TextAnchor.MiddleCenter);
-            titleText.fontSize = 20;
-            titleText.fontStyle = FontStyle.Bold;
-            titleText.color = Color.white;
-            RectTransform titleRect = titleText.GetComponent<RectTransform>();
-            titleRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.9f);
-            titleRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.97f);
-            titleRect.offsetMin = UnityEngine.Vector2.zero;
-            titleRect.offsetMax = UnityEngine.Vector2.zero;
-            
-            // Create instructions text
-            Text instructionsText = UIFactory.CreateLabel(ContentRoot, "InstructionsText", "Click on a business to select it", TextAnchor.MiddleCenter);
-            instructionsText.fontSize = 14;
-            instructionsText.color = Color.yellow;
-            RectTransform instructionsRect = instructionsText.GetComponent<RectTransform>();
-            instructionsRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.85f);
-            instructionsRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.9f);
-            instructionsRect.offsetMin = UnityEngine.Vector2.zero;
-            instructionsRect.offsetMax = UnityEngine.Vector2.zero;
-            
-            // Create a scroll view for the business list
-            GameObject scrollObj = UIFactory.CreateScrollView(ContentRoot, "BusinessListScroll", out GameObject scrollContent, out _);
-            RectTransform scrollRect = scrollObj.GetComponent<RectTransform>();
-            scrollRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.25f);
-            scrollRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.85f);
-            scrollRect.offsetMin = UnityEngine.Vector2.zero;
-            scrollRect.offsetMax = UnityEngine.Vector2.zero;
-            
-            // Create the business list container
-            businessListContainer = UIFactory.CreateVerticalGroup(scrollContent, "BusinessListContainer", true, false, true, true, 5);
-            businessListContainer.GetComponent<RectTransform>().sizeDelta = new UnityEngine.Vector2(0, 0);
-            
-            // Create button container
-            GameObject buttonContainer = UIFactory.CreateHorizontalGroup(ContentRoot, "ButtonContainer", true, false, true, true, 10);
-            
-            RectTransform buttonContainerRect = buttonContainer.GetComponent<RectTransform>();
-            buttonContainerRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
-            buttonContainerRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.2f);
-            buttonContainerRect.offsetMin = UnityEngine.Vector2.zero;
-            buttonContainerRect.offsetMax = UnityEngine.Vector2.zero;
-            
-            // Create the refresh button
-            refreshButton = UIFactory.CreateButton(buttonContainer, "RefreshButton", "Refresh List");
-            refreshButton.OnClick += RefreshBusinessList;
-            refreshButton.ButtonText.fontSize = 14;
-            SetupButton(refreshButton, new Color(0.2f, 0.6f, 0.9f, 1f));
-            
-            // Create the purchase button
-            purchaseButton = UIFactory.CreateButton(buttonContainer, "PurchaseButton", "Purchase Selected");
-            purchaseButton.OnClick += PurchaseSelectedBusiness;
-            purchaseButton.ButtonText.fontSize = 14;
-            SetupButton(purchaseButton, new Color(0.2f, 0.8f, 0.2f, 1f));
-            purchaseButton.Component.interactable = false; // Disabled by default
-            
-            // Create the close button
-            closeButton = UIFactory.CreateButton(buttonContainer, "CloseButton", "Close");
-            closeButton.OnClick += CloseBusinessUI;
-            closeButton.ButtonText.fontSize = 14;
-            SetupButton(closeButton, new Color(0.8f, 0.2f, 0.2f, 1f));
-            
-            // Create business selection buttons (will be populated when refreshing)
-            
-            // Refresh the business list initially
-            RefreshBusinessList();
+            try
+            {
+                Plugin.Logger.LogInfo("Constructing panel content...");
+                
+                // Create main title
+                Text titleText = UIFactory.CreateLabel(ContentRoot, "TitleText", "Manage Businesses", TextAnchor.MiddleCenter);
+                titleText.fontSize = 24;
+                titleText.fontStyle = FontStyle.Bold;
+                titleText.color = Color.white;
+                RectTransform titleRect = titleText.GetComponent<RectTransform>();
+                titleRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.9f);
+                titleRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.97f);
+                titleRect.offsetMin = UnityEngine.Vector2.zero;
+                titleRect.offsetMax = UnityEngine.Vector2.zero;
+                
+                // Create containers for different panel states
+                mainMenuContainer = UIFactory.CreateUIObject("MainMenuContainer", ContentRoot);
+                purchaseBusinessContainer = UIFactory.CreateUIObject("PurchaseBusinessContainer", ContentRoot);
+                ownedBusinessesContainer = UIFactory.CreateUIObject("OwnedBusinessesContainer", ContentRoot);
+                
+                // Set up the main menu container
+                RectTransform mainMenuRect = mainMenuContainer.GetComponent<RectTransform>();
+                mainMenuRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+                mainMenuRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.89f);
+                mainMenuRect.offsetMin = UnityEngine.Vector2.zero;
+                mainMenuRect.offsetMax = UnityEngine.Vector2.zero;
+                LayoutElement mainMenuLayout = mainMenuContainer.AddComponent<LayoutElement>();
+                mainMenuLayout.flexibleWidth = 1;
+                mainMenuLayout.flexibleHeight = 1;
+                
+                // Set up the purchase business container
+                RectTransform purchaseRect = purchaseBusinessContainer.GetComponent<RectTransform>();
+                purchaseRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+                purchaseRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.89f);
+                purchaseRect.offsetMin = UnityEngine.Vector2.zero;
+                purchaseRect.offsetMax = UnityEngine.Vector2.zero;
+                LayoutElement purchaseLayout = purchaseBusinessContainer.AddComponent<LayoutElement>();
+                purchaseLayout.flexibleWidth = 1;
+                purchaseLayout.flexibleHeight = 1;
+                
+                // Set up the owned businesses container
+                RectTransform ownedRect = ownedBusinessesContainer.GetComponent<RectTransform>();
+                ownedRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+                ownedRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.89f);
+                ownedRect.offsetMin = UnityEngine.Vector2.zero;
+                ownedRect.offsetMax = UnityEngine.Vector2.zero;
+                LayoutElement ownedLayout = ownedBusinessesContainer.AddComponent<LayoutElement>();
+                ownedLayout.flexibleWidth = 1;
+                ownedLayout.flexibleHeight = 1;
+                
+                // Set up the main menu
+                SetupMainMenu();
+                
+                // Set up the purchase business panel
+                SetupPurchaseBusinessPanel();
+                
+                // Set up the owned businesses panel
+                SetupOwnedBusinessesPanel();
+                
+                // Show the main menu initially
+                SwitchPanel(PanelState.MainMenu);
+                
+                Plugin.Logger.LogInfo("Panel content constructed successfully");
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error constructing panel content: {ex.Message}\n{ex.StackTrace}");
+            }
         }
         
         private void SetupButton(ButtonRef buttonRef, Color normalColor)
@@ -300,15 +323,518 @@ namespace BackInBusiness
             // Call base method first
             base.SetActive(active);
             
-            // Only refresh the business list when the panel is first activated
-            // This prevents refreshing when clicking on businesses
+            // Only refresh when the panel is first activated
             if (active && !wasActiveLastFrame)
             {
-                Plugin.Logger.LogInfo("Panel activated for the first time, refreshing business list");
-                RefreshBusinessList();
+                Plugin.Logger.LogInfo("Panel activated for the first time");
+                
+                // If we're coming back to the panel, go to the main menu
+                if (currentState != PanelState.MainMenu)
+                {
+                    SwitchPanel(PanelState.MainMenu);
+                }
             }
+            
             // Update the active state for next frame
             wasActiveLastFrame = active;
+        }
+        
+        // Method to switch between different panel states
+        private void SwitchPanel(PanelState state)
+        {
+            Plugin.Logger.LogInfo($"Switching to panel state: {state}");
+            currentState = state;
+            
+            // Hide all containers first
+            mainMenuContainer.SetActive(false);
+            purchaseBusinessContainer.SetActive(false);
+            ownedBusinessesContainer.SetActive(false);
+            
+            // Show the appropriate container
+            switch (state)
+            {
+                case PanelState.MainMenu:
+                    mainMenuContainer.SetActive(true);
+                    break;
+                    
+                case PanelState.PurchaseBusiness:
+                    purchaseBusinessContainer.SetActive(true);
+                    RefreshBusinessList();
+                    break;
+                    
+                case PanelState.OwnedBusinesses:
+                    ownedBusinessesContainer.SetActive(true);
+                    RefreshOwnedBusinessesList();
+                    break;
+            }
+            
+            Plugin.Logger.LogInfo($"Panel switched to {state}");
+        }
+        
+        // Set up the main menu panel
+        private void SetupMainMenu()
+        {
+            // Create subtitle
+            Text subtitleText = UIFactory.CreateLabel(mainMenuContainer, "SubtitleText", "Select an option:", TextAnchor.MiddleCenter);
+            subtitleText.fontSize = 18;
+            subtitleText.color = Color.white;
+            RectTransform subtitleRect = subtitleText.GetComponent<RectTransform>();
+            subtitleRect.anchorMin = new UnityEngine.Vector2(0.1f, 0.8f);
+            subtitleRect.anchorMax = new UnityEngine.Vector2(0.9f, 0.9f);
+            subtitleRect.offsetMin = UnityEngine.Vector2.zero;
+            subtitleRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create button container
+            GameObject buttonContainer = UIFactory.CreateVerticalGroup(mainMenuContainer, "MainMenuButtonContainer", true, false, true, true, 20);
+            RectTransform buttonContainerRect = buttonContainer.GetComponent<RectTransform>();
+            buttonContainerRect.anchorMin = new UnityEngine.Vector2(0.2f, 0.3f);
+            buttonContainerRect.anchorMax = new UnityEngine.Vector2(0.8f, 0.8f);
+            buttonContainerRect.offsetMin = UnityEngine.Vector2.zero;
+            buttonContainerRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create main menu buttons
+            ButtonRef purchaseBusinessButton = UIFactory.CreateButton(buttonContainer, "PurchaseBusinessButton", "Purchase a Business");
+            purchaseBusinessButton.OnClick += () => SwitchPanel(PanelState.PurchaseBusiness);
+            purchaseBusinessButton.ButtonText.fontSize = 18;
+            SetupButton(purchaseBusinessButton, new Color(0.2f, 0.6f, 0.9f, 1f));
+            
+            ButtonRef ownedBusinessesButton = UIFactory.CreateButton(buttonContainer, "OwnedBusinessesButton", "Manage Owned Businesses");
+            ownedBusinessesButton.OnClick += () => SwitchPanel(PanelState.OwnedBusinesses);
+            ownedBusinessesButton.ButtonText.fontSize = 18;
+            SetupButton(ownedBusinessesButton, new Color(0.2f, 0.6f, 0.9f, 1f));
+            
+            // Add layout elements to buttons for proper sizing
+            // Use a for loop instead of foreach to avoid IL2CPP issues with GetEnumerator
+            int childCount = buttonContainer.transform.childCount;
+            for (int i = 0; i < childCount; i++)
+            {
+                Transform child = buttonContainer.transform.GetChild(i);
+                LayoutElement layout = child.gameObject.AddComponent<LayoutElement>();
+                layout.minHeight = 60;
+                layout.preferredHeight = 60;
+            }
+            
+            // Create close button at the bottom
+            GameObject closeButtonContainer = UIFactory.CreateHorizontalGroup(mainMenuContainer, "CloseButtonContainer", true, false, true, true, 10);
+            RectTransform closeButtonRect = closeButtonContainer.GetComponent<RectTransform>();
+            closeButtonRect.anchorMin = new UnityEngine.Vector2(0.3f, 0.1f);
+            closeButtonRect.anchorMax = new UnityEngine.Vector2(0.7f, 0.2f);
+            closeButtonRect.offsetMin = UnityEngine.Vector2.zero;
+            closeButtonRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            ButtonRef mainCloseButton = UIFactory.CreateButton(closeButtonContainer, "MainCloseButton", "Close");
+            mainCloseButton.OnClick += CloseBusinessUI;
+            mainCloseButton.ButtonText.fontSize = 16;
+            SetupButton(mainCloseButton, new Color(0.8f, 0.2f, 0.2f, 1f));
+        }
+        
+        // Set up the purchase business panel
+        private void SetupPurchaseBusinessPanel()
+        {
+            // Create title for purchase panel
+            Text purchaseTitle = UIFactory.CreateLabel(purchaseBusinessContainer, "PurchaseTitle", "Available Businesses", TextAnchor.MiddleCenter);
+            purchaseTitle.fontSize = 20;
+            purchaseTitle.fontStyle = FontStyle.Bold;
+            purchaseTitle.color = Color.white;
+            RectTransform purchaseTitleRect = purchaseTitle.GetComponent<RectTransform>();
+            purchaseTitleRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.9f);
+            purchaseTitleRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.97f);
+            purchaseTitleRect.offsetMin = UnityEngine.Vector2.zero;
+            purchaseTitleRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create instructions text
+            Text instructionsText = UIFactory.CreateLabel(purchaseBusinessContainer, "InstructionsText", "Click on a business to select it", TextAnchor.MiddleCenter);
+            instructionsText.fontSize = 14;
+            instructionsText.color = Color.yellow;
+            RectTransform instructionsRect = instructionsText.GetComponent<RectTransform>();
+            instructionsRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.85f);
+            instructionsRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.9f);
+            instructionsRect.offsetMin = UnityEngine.Vector2.zero;
+            instructionsRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create a scroll view for the business list
+            GameObject scrollObj = UIFactory.CreateScrollView(purchaseBusinessContainer, "BusinessListScroll", out GameObject scrollContent, out _);
+            RectTransform scrollRect = scrollObj.GetComponent<RectTransform>();
+            scrollRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.25f);
+            scrollRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.85f);
+            scrollRect.offsetMin = UnityEngine.Vector2.zero;
+            scrollRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create the business list container
+            businessListContainer = UIFactory.CreateVerticalGroup(scrollContent, "BusinessListContainer", true, false, true, true, 5);
+            businessListContainer.GetComponent<RectTransform>().sizeDelta = new UnityEngine.Vector2(0, 0);
+            
+            // Create button container
+            GameObject buttonContainer = UIFactory.CreateHorizontalGroup(purchaseBusinessContainer, "ButtonContainer", true, false, true, true, 10);
+            
+            RectTransform buttonContainerRect = buttonContainer.GetComponent<RectTransform>();
+            buttonContainerRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+            buttonContainerRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.2f);
+            buttonContainerRect.offsetMin = UnityEngine.Vector2.zero;
+            buttonContainerRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create the back button
+            ButtonRef backButton = UIFactory.CreateButton(buttonContainer, "BackButton", "Back to Menu");
+            backButton.OnClick += () => SwitchPanel(PanelState.MainMenu);
+            backButton.ButtonText.fontSize = 14;
+            SetupButton(backButton, new Color(0.6f, 0.6f, 0.6f, 1f));
+            
+            // Create the refresh button
+            refreshButton = UIFactory.CreateButton(buttonContainer, "RefreshButton", "Refresh List");
+            refreshButton.OnClick += RefreshBusinessList;
+            refreshButton.ButtonText.fontSize = 14;
+            SetupButton(refreshButton, new Color(0.2f, 0.6f, 0.9f, 1f));
+            
+            // Create the purchase button
+            purchaseButton = UIFactory.CreateButton(buttonContainer, "PurchaseButton", "Purchase Selected");
+            purchaseButton.OnClick += PurchaseSelectedBusiness;
+            purchaseButton.ButtonText.fontSize = 14;
+            SetupButton(purchaseButton, new Color(0.2f, 0.8f, 0.2f, 1f));
+            purchaseButton.Component.interactable = false; // Disabled by default
+            
+            // Create the close button
+            closeButton = UIFactory.CreateButton(buttonContainer, "CloseButton", "Close");
+            closeButton.OnClick += CloseBusinessUI;
+            closeButton.ButtonText.fontSize = 14;
+            SetupButton(closeButton, new Color(0.8f, 0.2f, 0.2f, 1f));
+        }
+        
+        // Set up the owned businesses panel
+        private void SetupOwnedBusinessesPanel()
+        {
+            // Create title for owned businesses panel
+            Text ownedTitle = UIFactory.CreateLabel(ownedBusinessesContainer, "OwnedTitle", "Your Businesses", TextAnchor.MiddleCenter);
+            ownedTitle.fontSize = 20;
+            ownedTitle.fontStyle = FontStyle.Bold;
+            ownedTitle.color = Color.white;
+            RectTransform ownedTitleRect = ownedTitle.GetComponent<RectTransform>();
+            ownedTitleRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.9f);
+            ownedTitleRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.97f);
+            ownedTitleRect.offsetMin = UnityEngine.Vector2.zero;
+            ownedTitleRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create a scroll view for the owned business list
+            GameObject scrollObj = UIFactory.CreateScrollView(ownedBusinessesContainer, "OwnedBusinessListScroll", out GameObject scrollContent, out _);
+            RectTransform scrollRect = scrollObj.GetComponent<RectTransform>();
+            scrollRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.25f);
+            scrollRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.85f);
+            scrollRect.offsetMin = UnityEngine.Vector2.zero;
+            scrollRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create the owned business list container
+            ownedBusinessListContainer = UIFactory.CreateVerticalGroup(scrollContent, "OwnedBusinessListContainer", true, false, true, true, 5);
+            ownedBusinessListContainer.GetComponent<RectTransform>().sizeDelta = new UnityEngine.Vector2(0, 0);
+            
+            // Create placeholder text
+            Text placeholderText = UIFactory.CreateLabel(ownedBusinessListContainer, "PlaceholderText", "This panel will show your owned businesses", TextAnchor.MiddleCenter);
+            placeholderText.fontSize = 16;
+            placeholderText.color = Color.white;
+            
+            // Create button container
+            GameObject buttonContainer = UIFactory.CreateHorizontalGroup(ownedBusinessesContainer, "OwnedButtonContainer", true, false, true, true, 10);
+            RectTransform buttonContainerRect = buttonContainer.GetComponent<RectTransform>();
+            buttonContainerRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+            buttonContainerRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.2f);
+            buttonContainerRect.offsetMin = UnityEngine.Vector2.zero;
+            buttonContainerRect.offsetMax = UnityEngine.Vector2.zero;
+            
+            // Create the back button
+            ButtonRef backButton = UIFactory.CreateButton(buttonContainer, "OwnedBackButton", "Back to Menu");
+            backButton.OnClick += () => SwitchPanel(PanelState.MainMenu);
+            backButton.ButtonText.fontSize = 14;
+            SetupButton(backButton, new Color(0.6f, 0.6f, 0.6f, 1f));
+            
+            // Create the refresh button
+            ButtonRef ownedRefreshButton = UIFactory.CreateButton(buttonContainer, "OwnedRefreshButton", "Refresh List");
+            ownedRefreshButton.OnClick += RefreshOwnedBusinessesList;
+            ownedRefreshButton.ButtonText.fontSize = 14;
+            SetupButton(ownedRefreshButton, new Color(0.2f, 0.6f, 0.9f, 1f));
+            
+            // Create the close button
+            ButtonRef ownedCloseButton = UIFactory.CreateButton(buttonContainer, "OwnedCloseButton", "Close");
+            ownedCloseButton.OnClick += CloseBusinessUI;
+            ownedCloseButton.ButtonText.fontSize = 14;
+            SetupButton(ownedCloseButton, new Color(0.8f, 0.2f, 0.2f, 1f));
+        }
+        
+        // Method to refresh the owned businesses list
+        private void RefreshOwnedBusinessesList()
+        {
+            try
+            {
+                Plugin.Logger.LogInfo("Refreshing owned businesses list...");
+                
+                // Get owned businesses using our method
+                GetOwnedBusinesses();
+                
+                // Clear existing owned business entries
+                if (ownedBusinessListContainer != null && ownedBusinessListContainer.transform != null)
+                {
+                    int childCount = ownedBusinessListContainer.transform.childCount;
+                    for (int i = childCount - 1; i >= 0; i--)
+                    {
+                        Transform child = ownedBusinessListContainer.transform.GetChild(i);
+                        if (child != null && child.gameObject != null)
+                        {
+                            UnityEngine.Object.Destroy(child.gameObject);
+                        }
+                    }
+                }
+                
+                // Update the owned business list
+                if (ownedBusinesses == null || ownedBusinesses.Count == 0)
+                {
+                    // Create a "No owned businesses" label
+                    Text noBusinessesText = UIFactory.CreateLabel(ownedBusinessListContainer, "NoOwnedBusinessesText", "You don't own any businesses yet.", TextAnchor.MiddleCenter);
+                    noBusinessesText.fontSize = 16;
+                    noBusinessesText.color = Color.yellow;
+                }
+                else
+                {
+                    // Create entries for each owned business
+                    for (int i = 0; i < ownedBusinesses.Count; i++)
+                    {
+                        var business = ownedBusinesses[i];
+                        
+                        // Create a panel for this business
+                        GameObject businessPanel = UIFactory.CreateUIObject($"OwnedBusiness_{i}", ownedBusinessListContainer);
+                        businessPanel.AddComponent<LayoutElement>().preferredHeight = 60;
+                        businessPanel.AddComponent<Image>().color = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+                        
+                        // Add business name
+                        Text businessName = UIFactory.CreateLabel(businessPanel, $"BusinessName_{i}", $"{i+1}. {business.BusinessName}", TextAnchor.MiddleLeft);
+                        businessName.fontSize = 16;
+                        businessName.color = Color.white;
+                        RectTransform nameRect = businessName.GetComponent<RectTransform>();
+                        nameRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.5f);
+                        nameRect.anchorMax = new UnityEngine.Vector2(0.95f, 1f);
+                        nameRect.offsetMin = UnityEngine.Vector2.zero;
+                        nameRect.offsetMax = UnityEngine.Vector2.zero;
+                        
+                        // Get business type name from CompanyPresets mapping
+                        string businessTypeName = "Office"; // Default
+                        
+                        if (business.AddressId != null)
+                        {
+                            // Try to find the business in Player.Instance.apartmentsOwned
+                            for (int j = 0; j < Player.Instance.apartmentsOwned.Count; j++)
+                            {
+                                var apartment = Player.Instance.apartmentsOwned[j];
+                                if (apartment != null && apartment.id == business.AddressId)
+                                {
+                                    if (apartment.company != null && apartment.company.preset != null && !string.IsNullOrEmpty(apartment.company.preset.name))
+                                    {
+                                        CompanyPresets companyPresets = new CompanyPresets();
+                                        string presetName = apartment.company.preset.name;
+                                        
+                                        // Find the matching preset in the mapping
+                                        for (int k = 0; k < companyPresets.CompanyPresetsMapping.Length; k++)
+                                        {
+                                            if (presetName == companyPresets.CompanyPresetsMapping[k].Item1)
+                                            {
+                                                businessTypeName = companyPresets.CompanyPresetsMapping[k].Item2;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Add business info with formatted purchase date
+                        string formattedDate = GetPurchaseDate(business.PurchaseDate);
+                        string infoText = $"Type: {businessTypeName} | Income: {business.DailyIncome} Crows/day | Employees: {business.EmployeeCount} | Purchase Date: {formattedDate}";
+                        Text businessInfo = UIFactory.CreateLabel(businessPanel, $"BusinessInfo_{i}", infoText, TextAnchor.MiddleLeft);
+                        businessInfo.fontSize = 12;
+                        businessInfo.color = new Color(0.8f, 0.8f, 0.8f, 1f);
+                        RectTransform infoRect = businessInfo.GetComponent<RectTransform>();
+                        infoRect.anchorMin = new UnityEngine.Vector2(0.05f, 0f);
+                        infoRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.5f);
+                        infoRect.offsetMin = UnityEngine.Vector2.zero;
+                        infoRect.offsetMax = UnityEngine.Vector2.zero;
+                    }
+                }
+                
+                Plugin.Logger.LogInfo($"Displayed {ownedBusinesses?.Count ?? 0} owned businesses");
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error refreshing owned business list: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        // Get owned businesses from Player.Instance.apartmentsOwned
+        private void GetOwnedBusinesses()
+        {
+            try
+            {
+                // Get the list of owned businesses directly from BusinessManager
+                var businessManagerList = BusinessManager.Instance.OwnedBusinesses;
+                
+                if (businessManagerList != null && businessManagerList.Count > 0)
+                {
+                    // Make a copy of the list to avoid reference issues
+                    ownedBusinesses = new List<OwnedBusinessData>(businessManagerList);
+                    Plugin.Logger.LogInfo($"Found {ownedBusinesses.Count} owned businesses in BusinessManager");
+                    
+                    // Log each business for debugging
+                    for (int i = 0; i < ownedBusinesses.Count; i++)
+                    {
+                        var business = ownedBusinesses[i];
+                        Plugin.Logger.LogInfo($"Owned Business {i+1}: {business.BusinessName} (ID: {business.AddressId})");
+                    }
+                }
+                else
+                {
+                    // If no businesses found in BusinessManager, create a new empty list
+                    ownedBusinesses = new List<OwnedBusinessData>();
+                    Plugin.Logger.LogWarning("No businesses found in BusinessManager");
+                    
+                    // As a fallback, check if there are any valid businesses in Player.apartmentsOwned
+                    if (Player.Instance.apartmentsOwned != null && Player.Instance.apartmentsOwned.Count > 0)
+                    {
+                        Plugin.Logger.LogInfo($"Checking {Player.Instance.apartmentsOwned.Count} owned apartments as fallback");
+                        
+                        // Convert each apartment to OwnedBusinessData, but only if it's in CompanyPresets
+                        for (int i = 0; i < Player.Instance.apartmentsOwned.Count; i++)
+                        {
+                            var apartment = Player.Instance.apartmentsOwned[i];
+                            if (apartment != null && IsValidBusiness(apartment))
+                            {
+                                string purchaseDate = SessionData.Instance.TimeAndDate(SessionData.Instance.gameTime, true, true, true);
+                                
+                                // Create a new OwnedBusinessData object for each business
+                                OwnedBusinessData business = new OwnedBusinessData
+                                {
+                                    AddressId = apartment.id,
+                                    BusinessName = apartment.name?.ToString() ?? "Unknown Business",
+                                    Type = GetBusinessType(apartment),
+                                    PurchaseDate = purchaseDate,
+                                    DailyIncome = 500, // Default income
+                                    UpgradeLevel = 0,
+                                    EmployeeCount = GetEmployeeCount(apartment),
+                                    CustomData = new Dictionary<string, object>()
+                                };
+                                
+                                ownedBusinesses.Add(business);
+                                Plugin.Logger.LogInfo($"Fallback - Added business {i+1}: {business.BusinessName} (ID: {business.AddressId})");
+                                
+                                // Also add to BusinessManager for future reference
+                                BusinessManager.Instance.AddOwnedBusiness(apartment, business.BusinessName, 0, purchaseDate);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error getting owned businesses: {ex.Message}\n{ex.StackTrace}");
+                ownedBusinesses = new List<OwnedBusinessData>();
+            }
+        }
+
+        private static int GetEmployeeCount(NewAddress apartment)
+        {
+            try
+            {
+                // Check for null references
+                if (apartment == null || apartment.company == null || apartment.company.companyRoster == null)
+                {
+                    return 0;
+                }
+                
+                return apartment.company.companyRoster.Count;
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error getting employee count: {ex.Message}");
+                return 0;
+            }
+        }
+
+        private static string GetBusinessType(NewAddress apartment)
+        {
+            try
+            {
+                if (apartment == null || apartment.company == null || apartment.company.preset == null)
+                {
+                    return "Unknown";
+                }
+                
+                string presetName = apartment.company.preset.name;
+                
+                // Find the matching preset in the mapping
+                CompanyPresets companyPresets = new CompanyPresets();
+                for (int j = 0; j < companyPresets.CompanyPresetsMapping.Length; j++)
+                {
+                    if (presetName == companyPresets.CompanyPresetsMapping[j].Item1)
+                    {
+                        return companyPresets.CompanyPresetsMapping[j].Item2;
+                    }
+                }
+                
+                return "Unknown";
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error getting business type: {ex.Message}");
+                return "Unknown";
+            }
+        }
+
+        // Convert the stored game time value back to a formatted date string
+        private static string GetPurchaseDate(string purchaseDate)
+        {
+            try
+            {
+                if (float.TryParse(purchaseDate, out float gameTime))
+                {
+                    return SessionData.Instance.TimeAndDate(gameTime, true, true, true);
+                }
+                return purchaseDate; // If it's already a formatted date string, return as is
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error converting purchase date: {ex.Message}");
+                return purchaseDate;
+            }
+        }
+        
+        // Check if an apartment is a valid business (exists in CompanyPresets)
+        private static bool IsValidBusiness(NewAddress apartment)
+        {
+            try
+            {
+                // Check for null references
+                if (apartment == null || apartment.company == null || apartment.company.preset == null)
+                {
+                    return false;
+                }
+                
+                string presetName = apartment.company.preset.name;
+                if (string.IsNullOrEmpty(presetName))
+                {
+                    return false;
+                }
+                
+                // Check if the preset exists in CompanyPresets
+                CompanyPresets companyPresets = new CompanyPresets();
+                for (int i = 0; i < companyPresets.CompanyPresetsList.Length; i++)
+                {
+                    if (presetName == companyPresets.CompanyPresetsList[i].Item1)
+                    {
+                        return true; // Found in the presets list
+                    }
+                }
+                
+                return false; // Not found in the presets list
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error checking if valid business: {ex.Message}");
+                return false;
+            }
         }
         
         // Refresh the business list
@@ -865,10 +1391,25 @@ namespace BackInBusiness
                     // Store business name for the broadcast notification
                     string purchasedBusinessName = selectedBusiness.name?.ToString() ?? "Unknown";
                     
+
                     Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {purchasedBusinessName}");
-                    BusinessUIManager.Instance.ToggleBusinessUI();
+                    
+                                        
                     // Display business purchase notification and queue the broadcast notification to show after
                     DisplayBusinessPurchaseWithCallback(purchasedBusinessName);
+                    
+                    string purchaseDate = SessionData.Instance.TimeAndDate(SessionData.Instance.gameTime, true, true, true);
+                    
+                    // Add the business to the BusinessManager's owned businesses list
+                    // Pass the formatted date string directly so it remains fixed
+                    BusinessManager.Instance.AddOwnedBusiness(selectedBusiness, purchasedBusinessName, finalCost, purchaseDate);
+                    
+                    // Log the purchase
+                    Plugin.Logger.LogInfo($"Business {purchasedBusinessName} purchased and added to owned apartments");
+                    
+                    // Switch to the main menu after purchase
+                    BusinessUIManager.Instance.ToggleBusinessUI();
+
                 }
                 else
                 {

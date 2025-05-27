@@ -52,44 +52,6 @@ namespace BackInBusiness
             Plugin.Logger.LogInfo("BusinessManager initialized");
         }
 
-        // Purchase a new business
-        public bool PurchaseBusiness(NewAddress address, string businessName, BusinessType type, int purchasePrice)
-        {
-            if (address == null)
-                return false;
-
-            // Check if we already own this business
-            string addressId = address.id.ToString();
-            if (businessLookup.ContainsKey(addressId))
-                return false;
-
-            // Create new business data
-            OwnedBusinessData newBusiness = new OwnedBusinessData
-            {
-                AddressId = addressId.ToString(), // Convert int to string
-                BusinessName = businessName,
-                Type = type,
-                PurchasePrice = purchasePrice,
-                PurchaseDate = DateTime.Now,
-                DailyIncome = CalculateBaseIncome(type, address),
-                UpgradeLevel = 0,
-                EmployeeCount = 0, // Initialize employee count
-                CustomData = new Dictionary<string, object>()
-            };
-
-            // Add to collections
-            OwnedBusinesses.Add(newBusiness);
-            businessLookup[addressId] = newBusiness;
-
-            // Save data
-            SaveBusinessData();
-
-            // Trigger event
-            OnBusinessPurchased?.Invoke(newBusiness);
-
-            return true;
-        }
-
         // Sell a business
         public bool SellBusiness(string addressId, int sellingPrice)
         {
@@ -243,11 +205,11 @@ namespace BackInBusiness
         // Update business data
         public void UpdateBusiness(OwnedBusinessData business)
         {
-            if (business == null || !businessLookup.ContainsKey(business.AddressId))
+            if (business == null || !businessLookup.ContainsKey(business.AddressId.ToString()))
                 return;
 
             // Update in lookup
-            businessLookup[business.AddressId] = business;
+            businessLookup[business.AddressId.ToString()] = business;
 
             // Save data
             SaveBusinessData();
@@ -341,23 +303,37 @@ namespace BackInBusiness
             return totalIncome;
         }
 
+        // Get the plugin directory path
+        private string GetPluginDirectoryPath()
+        {
+            return Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+        }
+        
         // Save business data to file
         public void SaveBusinessData()
         {
             try
             {
-                string saveFolder = Path.Combine(BepInEx.Paths.GameRootPath, "UserData", "BackInBusiness");
+                string saveFolder = Path.Combine(GetPluginDirectoryPath(), "Data");
                 Directory.CreateDirectory(saveFolder);
                 
                 string savePath = Path.Combine(saveFolder, "businesses.json");
-                string json = JsonConvert.SerializeObject(OwnedBusinesses, Formatting.Indented);
+                
+                // Use Newtonsoft.Json for serialization
+                string json = Newtonsoft.Json.JsonConvert.SerializeObject(OwnedBusinesses, 
+                    Newtonsoft.Json.Formatting.Indented,
+                    new Newtonsoft.Json.JsonSerializerSettings
+                    {
+                        ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore
+                    });
+                    
                 File.WriteAllText(savePath, json);
                 
                 Plugin.Logger.LogInfo($"Saved {OwnedBusinesses.Count} businesses to {savePath}");
             }
             catch (Exception ex)
             {
-                Plugin.Logger.LogError($"Failed to save business data: {ex.Message}");
+                Plugin.Logger.LogError($"Failed to save business data: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -366,22 +342,46 @@ namespace BackInBusiness
         {
             try
             {
-                string saveFolder = Path.Combine(BepInEx.Paths.GameRootPath, "UserData", "BackInBusiness");
+                string saveFolder = Path.Combine(GetPluginDirectoryPath(), "Data");
                 string savePath = Path.Combine(saveFolder, "businesses.json");
                 
                 if (File.Exists(savePath))
                 {
-                    string json = File.ReadAllText(savePath);
-                    OwnedBusinesses = JsonConvert.DeserializeObject<List<OwnedBusinessData>>(json) ?? new List<OwnedBusinessData>();
-                    
-                    // Rebuild lookup dictionary
+                    // Clear existing data
+                    OwnedBusinesses.Clear();
                     businessLookup.Clear();
-                    foreach (var business in OwnedBusinesses)
-                    {
-                        businessLookup[business.AddressId] = business;
-                    }
                     
-                    Plugin.Logger.LogInfo($"Loaded {OwnedBusinesses.Count} businesses from {savePath}");
+                    // Read the file
+                    string json = File.ReadAllText(savePath);
+                    
+                    try 
+                    {
+                        // Use Newtonsoft.Json for deserialization
+                        var loadedBusinesses = Newtonsoft.Json.JsonConvert.DeserializeObject<List<OwnedBusinessData>>(json);
+                        
+                        if (loadedBusinesses != null)
+                        {
+                            OwnedBusinesses = loadedBusinesses;
+                            
+                            // Rebuild lookup dictionary
+                            foreach (var business in OwnedBusinesses)
+                            {
+                                businessLookup[business.AddressId.ToString()] = business;
+                            }
+                            
+                            Plugin.Logger.LogInfo($"Successfully loaded {OwnedBusinesses.Count} businesses from {savePath}");
+                        }
+                        else
+                        {
+                            Plugin.Logger.LogWarning("Loaded business data was null, starting fresh");
+                            OwnedBusinesses = new List<OwnedBusinessData>();
+                        }
+                    }
+                    catch (Exception parseEx)
+                    {
+                        Plugin.Logger.LogError($"Error parsing business data: {parseEx.Message}\n{parseEx.StackTrace}");
+                        OwnedBusinesses = new List<OwnedBusinessData>();
+                    }
                 }
                 else
                 {
@@ -394,10 +394,88 @@ namespace BackInBusiness
             {
                 OwnedBusinesses = new List<OwnedBusinessData>();
                 businessLookup.Clear();
-                Plugin.Logger.LogError($"Failed to load business data: {ex.Message}");
+                Plugin.Logger.LogError($"Failed to load business data: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
+        // Add a new business to owned businesses
+        public void AddOwnedBusiness(NewAddress apartment, string businessName, int purchasePrice, string purchaseDate)
+        {
+            try
+            {
+                // Check if we already have this business
+                string addressIdStr = apartment.id.ToString();
+                if (businessLookup.ContainsKey(addressIdStr))
+                {
+                    Plugin.Logger.LogWarning($"Business with ID {addressIdStr} already exists in owned businesses");
+                    return;
+                }
+                
+                // Get business type from CompanyPresets
+                string businessType = "Unknown";
+                if (apartment.company != null && apartment.company.preset != null)
+                {
+                    string presetName = apartment.company.preset.name;
+                    CompanyPresets companyPresets = new CompanyPresets();
+                    
+                    for (int i = 0; i < companyPresets.CompanyPresetsMapping.Length; i++)
+                    {
+                        if (presetName == companyPresets.CompanyPresetsMapping[i].Item1)
+                        {
+                            businessType = companyPresets.CompanyPresetsMapping[i].Item2;
+                            break;
+                        }
+                    }
+                }
+                
+                // Get employee count
+                int employeeCount = 0;
+                if (apartment.company != null && apartment.company.companyRoster != null)
+                {
+                    employeeCount = apartment.company.companyRoster.Count;
+                }
+                
+                // Create new business data
+                OwnedBusinessData business = new OwnedBusinessData
+                {
+                    AddressId = apartment.id,
+                    BusinessName = businessName,
+                    Type = businessType,
+                    PurchasePrice = purchasePrice,
+                    PurchaseDate = purchaseDate,
+                    DailyIncome = 500, // Default income
+                    UpgradeLevel = 0,
+                    EmployeeCount = employeeCount,
+                    FloorName = apartment.floor?.name ?? "Unknown",
+                    CustomData = new Dictionary<string, object>()
+                };
+
+                // Add to our collections
+                OwnedBusinesses.Add(business);
+                businessLookup[addressIdStr] = business;
+                
+                // Also add to the UI panel's list if it exists
+                if (BusinessPanel.ownedBusinesses != null)
+                {
+                    BusinessPanel.ownedBusinesses.Add(business);
+                }
+
+                // Trigger the OnBusinessPurchased event
+                OnBusinessPurchased?.Invoke(business);
+                
+                // Save the data
+                SaveBusinessData();
+                
+                Plugin.Logger.LogInfo($"Successfully added business {businessName} (ID: {addressIdStr}) to owned businesses");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger.LogError($"Error adding owned business: {ex.Message}\n{ex.StackTrace}");
             }
         }
     }
+
+
     
     // We'll handle periodic updates through the SaveGamerHandlers class instead
 
@@ -416,11 +494,11 @@ namespace BackInBusiness
     public class OwnedBusinessData
     {
         // Core data
-        public string AddressId { get; set; }
+        public int AddressId { get; set; }
         public string BusinessName { get; set; }
-        public BusinessType Type { get; set; }
+        public string Type { get; set; }
         public int PurchasePrice { get; set; }
-        public DateTime PurchaseDate { get; set; }
+        public string PurchaseDate { get; set; }
         public DateTime LastIncomeCollection { get; set; }
         
         // Business stats

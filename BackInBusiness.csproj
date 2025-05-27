@@ -24,6 +24,9 @@
       <HintPath>..\..\..\..\SteamLibrary\steamapps\common\Shadows of Doubt\Shadows of Doubt_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="AssetBundleLoader">
+      <HintPath>AssetBundleLoader.dll</HintPath>
+    </Reference>
     <Reference Include="BepInEx.Core">
       <HintPath>..\..\..\..\SteamLibrary\steamapps\common\Shadows of Doubt Mono\BepInEx\core\BepInEx.Core.dll</HintPath>
       <Private>True</Private>
