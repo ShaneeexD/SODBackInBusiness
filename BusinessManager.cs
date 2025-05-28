@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
+using System.Reflection;
 using UnityEngine;
+using SimpleJSON;
 using SOD.Common;
-using Newtonsoft.Json;
 
 namespace BackInBusiness
 {
@@ -312,28 +312,81 @@ namespace BackInBusiness
         // Save business data to file
         public void SaveBusinessData()
         {
+            Plugin.Instance.Log.LogInfo($"Attempting to save {OwnedBusinesses.Count} businesses.");
+            if (OwnedBusinesses == null)
+            {
+                Plugin.Instance.Log.LogWarning("OwnedBusinesses is null. Cannot save.");
+                return;
+            }
+
             try
             {
-                string saveFolder = Path.Combine(GetPluginDirectoryPath(), "Data");
-                Directory.CreateDirectory(saveFolder);
-                
-                string savePath = Path.Combine(saveFolder, "businesses.json");
-                
-                // Use Newtonsoft.Json for serialization
-                string json = Newtonsoft.Json.JsonConvert.SerializeObject(OwnedBusinesses, 
-                    Newtonsoft.Json.Formatting.Indented,
-                    new Newtonsoft.Json.JsonSerializerSettings
+                string pluginAssemblyDir = Path.GetDirectoryName(GetPluginDirectoryPath()); // e.g., ...\BepInEx\plugins\
+                string targetSaveDataDirectory = Path.Combine(pluginAssemblyDir, "Data"); // e.g., ...\BepInEx\plugins\Data\
+                string savePath = Path.Combine(targetSaveDataDirectory, "businesses.json"); // Full path to the save file
+
+                // Ensure the specific directory for the save file exists
+                if (!Directory.Exists(targetSaveDataDirectory))
+                {
+                    Directory.CreateDirectory(targetSaveDataDirectory); // This creates the "Data" subfolder
+                }
+
+                JSONArray businessesArray = new JSONArray();
+                foreach (var business in OwnedBusinesses)
+                {
+                    JSONObject businessJson = new JSONObject();
+                    businessJson["AddressId"] = business.AddressId;
+                    businessJson["BusinessName"] = business.BusinessName;
+                    businessJson["Type"] = business.Type;
+                    businessJson["PurchasePrice"] = business.PurchasePrice;
+                    businessJson["PurchaseDate"] = business.PurchaseDate;
+                    businessJson["LastIncomeCollection"] = business.LastIncomeCollection.ToString("o"); // ISO 8601 format
+                    businessJson["DailyIncome"] = business.DailyIncome;
+                    businessJson["EmployeeCount"] = business.EmployeeCount;
+                    businessJson["FloorName"] = business.FloorName;
+
+                    JSONArray upgradesArray = new JSONArray();
+                    foreach (var upgrade in business.Upgrades)
                     {
-                        ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore
-                    });
-                    
-                File.WriteAllText(savePath, json);
-                
-                Plugin.Logger.LogInfo($"Saved {OwnedBusinesses.Count} businesses to {savePath}");
+                        JSONObject upgradeJson = new JSONObject();
+                        upgradeJson["Name"] = upgrade.Name;
+                        upgradeJson["Description"] = upgrade.Description; // Added Description
+                        upgradeJson["Cost"] = upgrade.Cost;
+                        upgradeJson["IncomeBoost"] = upgrade.IncomeBoost; // Added IncomeBoost
+                        upgradeJson["Purchased"] = upgrade.Purchased; // Corrected to Purchased
+                        upgradesArray.Add(upgradeJson);
+                    }
+                    businessJson["Upgrades"] = upgradesArray;
+
+                    JSONObject customDataJson = new JSONObject();
+                    if (business.CustomData != null)
+                    {
+                        foreach (var kvp in business.CustomData)
+                        {
+                            // SimpleJSON will handle basic types like string, int, bool, float, double by implicit conversion.
+                            // For other types, you might need to convert them to a string or a supported SimpleJSON type.
+                            if (kvp.Value is string || kvp.Value is int || kvp.Value is bool || kvp.Value is float || kvp.Value is double || kvp.Value == null)
+                            {
+                                customDataJson[kvp.Key] = new JSONString(kvp.Value?.ToString() ?? JSONNull.CreateOrGet().ToString());
+                            }
+                            else
+                            {
+                                // Fallback: store as string. You might need more sophisticated handling for complex types.
+                                customDataJson[kvp.Key] = kvp.Value.ToString();
+                                Plugin.Instance.Log.LogWarning($"CustomData value for key '{kvp.Key}' of type '{kvp.Value.GetType()}' was serialized as string.");
+                            }
+                        }
+                    }
+                    businessJson["CustomData"] = customDataJson;
+                    businessesArray.Add(businessJson);
+                }
+
+                File.WriteAllText(savePath, businessesArray.ToString(4)); // Pretty print with 4 spaces indent
+                Plugin.Instance.Log.LogInfo($"Business data saved successfully to {savePath} using SimpleJSON");
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                Plugin.Logger.LogError($"Failed to save business data: {ex.Message}\n{ex.StackTrace}");
+                Plugin.Instance.Log.LogError($"Failed to save business data using SimpleJSON: {e.Message}\n{e.StackTrace}");
             }
         }
 
@@ -342,8 +395,8 @@ namespace BackInBusiness
         {
             try
             {
-                string saveFolder = Path.Combine(GetPluginDirectoryPath(), "Data");
-                string savePath = Path.Combine(saveFolder, "businesses.json");
+                string directoryPath = Path.GetDirectoryName(GetPluginDirectoryPath());
+                string savePath = Path.Combine(directoryPath, "Data", "businesses.json");
                 
                 if (File.Exists(savePath))
                 {
@@ -352,49 +405,97 @@ namespace BackInBusiness
                     businessLookup.Clear();
                     
                     // Read the file
-                    string json = File.ReadAllText(savePath);
+                    string jsonString = File.ReadAllText(savePath);
                     
                     try 
                     {
-                        // Use Newtonsoft.Json for deserialization
-                        var loadedBusinesses = Newtonsoft.Json.JsonConvert.DeserializeObject<List<OwnedBusinessData>>(json);
-                        
-                        if (loadedBusinesses != null)
+                        // Use SimpleJSON for deserialization
+                        JSONNode parsedJson = JSONNode.Parse(jsonString);
+                        if (parsedJson == null || !parsedJson.IsArray)
                         {
-                            OwnedBusinesses = loadedBusinesses;
-                            
-                            // Rebuild lookup dictionary
-                            foreach (var business in OwnedBusinesses)
+                            Plugin.Instance.Log.LogWarning("Failed to parse JSON or root is not an array. Initializing new list.");
+                            OwnedBusinesses = new List<OwnedBusinessData>(); 
+                            businessLookup.Clear();
+                            return;
+                        }
+                        JSONArray businessesArray = parsedJson.AsArray;
+
+                        foreach (JSONNode businessNode in businessesArray.Children) // Iterate through children
+                        {
+                            if (!businessNode.IsObject) continue;
+                            JSONObject businessJson = businessNode.AsObject;
                             {
+                                OwnedBusinessData business = new OwnedBusinessData
+                                {
+                                    AddressId = businessJson["AddressId"].AsInt,
+                                    BusinessName = businessJson["BusinessName"].Value,
+                                    Type = businessJson["Type"].Value,
+                                    PurchasePrice = businessJson["PurchasePrice"].AsInt,
+                                    PurchaseDate = businessJson["PurchaseDate"].Value,
+                                    LastIncomeCollection = DateTime.Parse(businessJson["LastIncomeCollection"].Value),
+                                    DailyIncome = businessJson["DailyIncome"].AsInt,
+                                    EmployeeCount = businessJson["EmployeeCount"].AsInt,
+                                    FloorName = businessJson["FloorName"].Value,
+                                    // Initialize lists for safety, though SimpleJSON should handle if they are missing in JSON
+                                    Upgrades = new List<UpgradeData>(), 
+                                    CustomData = new Dictionary<string, object>()
+                                };
+
+                                if (businessJson["Upgrades"] != null && businessJson["Upgrades"].IsArray) // Check for null and type
+                                {
+                                    JSONArray upgradesArray = businessJson["Upgrades"].AsArray;
+                                    foreach (JSONNode upgradeNode in upgradesArray.Children) // Iterate through children
+                                    {
+                                        if (!upgradeNode.IsObject) continue;
+                                        JSONObject upgradeJson = upgradeNode.AsObject;
+                                        UpgradeData upgrade = new UpgradeData(
+                                            upgradeJson["Name"].Value,
+                                            upgradeJson["Description"].Value,
+                                            upgradeJson["Cost"].AsFloat,
+                                            upgradeJson["IncomeBoost"].AsFloat
+                                        );
+                                        upgrade.Purchased = upgradeJson["Purchased"].AsBool;
+                                        business.Upgrades.Add(upgrade);
+                                    }
+                                }
+
+                                if (businessJson["CustomData"] != null && businessJson["CustomData"].IsObject) // Check for null and type
+                                {
+                                    JSONObject customDataJson = businessJson["CustomData"].AsObject;
+                                    foreach (KeyValuePair<string, JSONNode> kvp in customDataJson)
+                                    {
+                                        // For deserialization, kvp.Value can be JSONString, JSONNumber, JSONBool, etc.
+                                        // Accessing .Value gives the string representation. For specific types:
+                                        // kvp.Value.AsInt, kvp.Value.AsFloat, kvp.Value.AsBool can be used.
+                                        // If you know the type, cast. Otherwise, storing as string or object is safer.
+                                        business.CustomData[kvp.Key] = kvp.Value.Value; // Storing as string for now
+                                    }
+                                }
+                                OwnedBusinesses.Add(business);
                                 businessLookup[business.AddressId.ToString()] = business;
                             }
-                            
-                            Plugin.Logger.LogInfo($"Successfully loaded {OwnedBusinesses.Count} businesses from {savePath}");
-                        }
-                        else
-                        {
-                            Plugin.Logger.LogWarning("Loaded business data was null, starting fresh");
-                            OwnedBusinesses = new List<OwnedBusinessData>();
-                        }
-                    }
+                        } // This closing brace matches the `foreach (JSONNode businessNode...`
+                        
+                        Plugin.Instance.Log.LogInfo($"Successfully loaded {OwnedBusinesses.Count} businesses from {savePath} using SimpleJSON");
+                    } // This closing brace matches `try` for parsing
                     catch (Exception parseEx)
                     {
-                        Plugin.Logger.LogError($"Error parsing business data: {parseEx.Message}\n{parseEx.StackTrace}");
+                        Plugin.Instance.Log.LogError($"Error parsing business data: {parseEx.Message}\n{parseEx.StackTrace}");
                         OwnedBusinesses = new List<OwnedBusinessData>();
                     }
                 }
                 else
                 {
-                    OwnedBusinesses = new List<OwnedBusinessData>();
+                    OwnedBusinesses = new List<OwnedBusinessData>(); 
                     businessLookup.Clear();
-                    Plugin.Logger.LogInfo("No business data file found, starting fresh");
+                    Plugin.Instance.Log.LogInfo("No business data file found, starting fresh");
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) // This is the outer catch for the whole LoadBusinessData method
             {
                 OwnedBusinesses = new List<OwnedBusinessData>();
                 businessLookup.Clear();
-                Plugin.Logger.LogError($"Failed to load business data: {ex.Message}\n{ex.StackTrace}");
+                Plugin.Instance.Log.LogError($"Failed to load business data: {ex.Message}\n{ex.StackTrace}");
             }
         }
         
@@ -444,10 +545,9 @@ namespace BackInBusiness
                     PurchasePrice = purchasePrice,
                     PurchaseDate = purchaseDate,
                     DailyIncome = 500, // Default income
-                    UpgradeLevel = 0,
                     EmployeeCount = employeeCount,
                     FloorName = apartment.floor?.name ?? "Unknown",
-                    CustomData = new Dictionary<string, object>()
+                    // CustomData = new Dictionary<string, object>() // Temporarily commented out
                 };
 
                 // Add to our collections
@@ -508,6 +608,8 @@ namespace BackInBusiness
         public string FloorName { get; set; }
         
         // Custom data for different business types
+        public List<UpgradeData> Upgrades { get; set; } = new List<UpgradeData>();
+
         public Dictionary<string, object> CustomData { get; set; } = new Dictionary<string, object>();
     }
 }
