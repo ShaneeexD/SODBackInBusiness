@@ -14,7 +14,6 @@
 
   <ItemGroup>
     <PackageReference Include="Lib.Harmony" Version="2.3.6" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="SOD.Common" Version="2.1.0" />
     <PackageReference Include="UniverseLib.IL2CPP.Interop" Version="1.5.1" />
   </ItemGroup>
@@ -95,6 +94,9 @@
     </Reference>
     <Reference Include="ModLoggerLib">
       <HintPath>ModLoggerLib.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="RealEstateListingCruncherApp">
       <HintPath>RealEstateListingCruncherApp.dll</HintPath>

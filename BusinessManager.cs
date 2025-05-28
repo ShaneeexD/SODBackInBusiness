@@ -309,6 +309,30 @@ namespace BackInBusiness
             return Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
         }
         
+        private string GetCurrentSaveFileName()
+        {
+            if (RestartSafeController.Instance != null && RestartSafeController.Instance.saveStateFileInfo != null && !string.IsNullOrEmpty(RestartSafeController.Instance.saveStateFileInfo.Name))
+            {
+                string safeName = RestartSafeController.Instance.saveStateFileInfo.Name;
+                // Sanitize the name to be path-friendly, though usually not an issue with SoD save names
+                foreach (char invalidChar in Path.GetInvalidFileNameChars())
+                {
+                    safeName = safeName.Replace(invalidChar, '_');
+                }
+                return safeName;
+            }
+            Plugin.Instance.Log.LogInfo("No active save file name found, using default.");
+            return "DefaultSave"; // Fallback save name
+        }
+
+        private string GetBusinessDataFilePath()
+        {
+            string pluginAssemblyDir = Path.GetDirectoryName(GetPluginDirectoryPath()); // e.g., ...\BepInEx\plugins\YourModName\
+            string saveDataDirectory = Path.Combine(pluginAssemblyDir, "Data"); // e.g., ...\BepInEx\plugins\YourModName\Data\
+            string fileName = $"{GetCurrentSaveFileName()}_businesses.json";
+            return Path.Combine(saveDataDirectory, fileName);
+        }
+
         // Save business data to file
         public void SaveBusinessData()
         {
@@ -321,14 +345,19 @@ namespace BackInBusiness
 
             try
             {
-                string pluginAssemblyDir = Path.GetDirectoryName(GetPluginDirectoryPath()); // e.g., ...\BepInEx\plugins\
-                string targetSaveDataDirectory = Path.Combine(pluginAssemblyDir, "Data"); // e.g., ...\BepInEx\plugins\Data\
-                string savePath = Path.Combine(targetSaveDataDirectory, "businesses.json"); // Full path to the save file
+                string savePath = GetBusinessDataFilePath();
+                string targetSaveDataDirectory = Path.GetDirectoryName(savePath);
+
+                if (targetSaveDataDirectory == null)
+                {
+                    Plugin.Instance.Log.LogError("Could not determine target save data directory.");
+                    return;
+                }
 
                 // Ensure the specific directory for the save file exists
                 if (!Directory.Exists(targetSaveDataDirectory))
                 {
-                    Directory.CreateDirectory(targetSaveDataDirectory); // This creates the "Data" subfolder
+                    Directory.CreateDirectory(targetSaveDataDirectory); 
                 }
 
                 JSONArray businessesArray = new JSONArray();
@@ -393,11 +422,11 @@ namespace BackInBusiness
         // Load business data from file
         public void LoadBusinessData()
         {
+            string savePath = GetBusinessDataFilePath();
+            Plugin.Instance.Log.LogInfo($"Attempting to load business data from: {savePath}");
+
             try
             {
-                string directoryPath = Path.GetDirectoryName(GetPluginDirectoryPath());
-                string savePath = Path.Combine(directoryPath, "Data", "businesses.json");
-                
                 if (File.Exists(savePath))
                 {
                     // Clear existing data
@@ -563,10 +592,10 @@ namespace BackInBusiness
                 // Trigger the OnBusinessPurchased event
                 OnBusinessPurchased?.Invoke(business);
                 
-                // Save the data
-                SaveBusinessData();
+                // Data will be saved by the game's save mechanism hook
+                // SaveBusinessData(); 
                 
-                Plugin.Logger.LogInfo($"Successfully added business {businessName} (ID: {addressIdStr}) to owned businesses");
+                Plugin.Logger.LogInfo($"Successfully added business {businessName} (ID: {addressIdStr}) to owned businesses. Data will be saved on next game save.");
             }
             catch (Exception ex)
             {

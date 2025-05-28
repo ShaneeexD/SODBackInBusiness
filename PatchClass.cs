@@ -8,6 +8,8 @@ using System.Reflection;
 using UnityEngine;
 using UniverseLib;
 using UniverseLib.Config;
+using SOD.Common; // For Lib
+using SOD.Common.Helpers; // For Lib.SaveGame (potentially, or other helpers)
 
 namespace BackInBusiness
 {
@@ -46,6 +48,10 @@ namespace BackInBusiness
             Logger.LogInfo("SaveGamerHandlers initialized");
             
             exampleConfigVariable = Config.Bind("General", "ExampleConfigVariable", false, new ConfigDescription("Example config description."));
+
+            // Subscribe to game save event
+            Logger.LogInfo("Subscribing to Lib.SaveGame.OnAfterSave event.");
+            Lib.SaveGame.OnAfterSave += OnGameSaveComplete;
         }
         
         private void OnUniverseInit()
@@ -57,6 +63,23 @@ namespace BackInBusiness
         private void OnUniverseLog(string message, LogType logType)
         {
             Logger.LogInfo($"[UniverseLib] {message}");
+        }
+
+        private void OnGameSaveComplete(object sender, EventArgs e)
+        {
+            // EventArgs might not have IsNewGame or SaveGameName directly.
+            // We'll log a generic message and then save.
+            Logger.LogInfo("Game save detected. Saving business data.");
+            try
+            {
+                BusinessManager.Instance.SaveBusinessData();
+                Logger.LogInfo("Business data saved successfully.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Error saving business data: {ex.Message}");
+                Logger.LogError(ex.StackTrace);
+            }
         }
     }
 }
