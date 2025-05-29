@@ -328,7 +328,7 @@ namespace BackInBusiness
         private string GetBusinessDataFilePath()
         {
             string pluginAssemblyDir = Path.GetDirectoryName(GetPluginDirectoryPath()); // e.g., ...\BepInEx\plugins\YourModName\
-            string saveDataDirectory = Path.Combine(pluginAssemblyDir, "Data"); // e.g., ...\BepInEx\plugins\YourModName\Data\
+            string saveDataDirectory = Path.Combine(pluginAssemblyDir, "BIB-Data"); // e.g., ...\BepInEx\plugins\YourModName\Data\
             string fileName = $"{GetCurrentSaveFileName()}_businesses.json";
             return Path.Combine(saveDataDirectory, fileName);
         }
