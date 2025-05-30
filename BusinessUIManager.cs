@@ -613,7 +613,7 @@ namespace BackInBusiness
                         
                         // Get business type name from CompanyPresets mapping
                         string businessTypeName = "Office"; // Default
-                        
+
                         if (business.AddressId != null)
                         {
                             // Try to find the business in Player.Instance.apartmentsOwned
@@ -917,7 +917,8 @@ namespace BackInBusiness
                                 string presetType = companyPresets.CompanyPresetsList[j].Item1;
                                 string businessType = "Unknown";
                                 int floorNumber = 0;
-                                
+                                int socialCreditLevel = companyPresets.CompanyPresetsList[j].Item3;
+
                                 // Get the friendly business type name from the mapping
                                 for (int k = 0; k < companyPresets.CompanyPresetsMapping.Length; k++)
                                 {
@@ -958,7 +959,7 @@ namespace BackInBusiness
                                 int totalCost = baseCost + employeeCost + floorMultiplier;
                                 
                                 // Format the button text with all relevant information
-                                buttonText = $"{i + 1}. {name} | Type: {businessType} | Employees: {employeeCount} | Cost: {totalCost} Crows";
+                                buttonText = $"{i + 1}. {name} | Type: {businessType} | Employees: {employeeCount} | Cost: {totalCost} Crows | SCL: {socialCreditLevel}";
                                 break; // Exit loop once we find a match
                             }
                         }
@@ -1316,12 +1317,14 @@ namespace BackInBusiness
                 int baseCost = 0;
                 string presetName = selectedBusiness.company.preset.name;
                 string businessType = "Unknown";
+                int socialCreditLevel = 0;
                 
                 // Find the matching preset and get its base cost
                 for (int i = 0; i < companyPresets.CompanyPresetsList.Length; i++)
                 {
                     if (presetName == companyPresets.CompanyPresetsList[i].Item1)
                     {
+                        socialCreditLevel = companyPresets.CompanyPresetsList[i].Item3;
                         baseCost = companyPresets.CompanyPresetsList[i].Item2;
                         break;
                     }
@@ -1378,44 +1381,28 @@ namespace BackInBusiness
                 
                 Plugin.Logger.LogInfo($"Business cost calculation: Base cost {baseCost} + Employee cost ({employeeCost} for {employeeCount} employees) + Floor multiplier ({floorMultiplier}) = {finalCost} Crows");
                 
-                // Deduct the cost from player's money
                 if(GameplayController.Instance.money >= finalCost)
                 {
-                    GameplayController.Instance.AddMoney(-finalCost, true, $"Purchased business: {selectedBusiness.name}");
-                    availableBusinesses.RemoveAt(selectedBusinessIndex);
-                    businessButtons.RemoveAt(selectedBusinessIndex);
-                    Player.Instance.AddLocationOfAuthorty(selectedBusiness);
-                    Player.Instance.apartmentsOwned.Add(selectedBusiness);
-                    Player.Instance.AddToKeyring(selectedBusiness, false);
-
-                    // Store business name for the broadcast notification
-                    string purchasedBusinessName = selectedBusiness.name?.ToString() ?? "Unknown";
-                    
-
-                    Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {purchasedBusinessName}");
-                    
-                                        
-                    // Display business purchase notification and queue the broadcast notification to show after
-                    DisplayBusinessPurchaseWithCallback(purchasedBusinessName);
-                    
-                    string purchaseDate = SessionData.Instance.TimeAndDate(SessionData.Instance.gameTime, true, true, true);
-                    
-                    // Add the business to the BusinessManager's owned businesses list
-                    // Pass the formatted date string directly so it remains fixed
-                    BusinessManager.Instance.AddOwnedBusiness(selectedBusiness, purchasedBusinessName, finalCost, purchaseDate);
-                    
-                    // Log the purchase
-                    Plugin.Logger.LogInfo($"Business {purchasedBusinessName} purchased and added to owned apartments");
-                    
-                    // Switch to the main menu after purchase
-                    BusinessUIManager.Instance.ToggleBusinessUI();
-
+                    if(Plugin.useSocialCreditLevel.Value == true && socialCreditLevel <= GameplayController.Instance.GetCurrentSocialCreditLevel())
+                    {
+                        BuyBusiness(finalCost, selectedBusiness, selectedBusinessIndex);
+                    }
+                    else if(Plugin.useSocialCreditLevel.Value == true && socialCreditLevel > GameplayController.Instance.GetCurrentSocialCreditLevel())
+                    {
+                        BusinessUIManager.Instance.ToggleBusinessUI();
+                        Lib.GameMessage.Broadcast($"You don't have enough Social Credit to purchase {selectedBusiness.name}. Required SCL: {socialCreditLevel}", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.white);
+                    }
+                    else if(Plugin.useSocialCreditLevel.Value == false)
+                    {
+                        BuyBusiness(finalCost, selectedBusiness, selectedBusinessIndex);
+                    }
                 }
-                else
+                else if (GameplayController.Instance.money < finalCost)
                 {
-                    BusinessUIManager.Instance.ToggleBusinessUI();
-                    Lib.GameMessage.Broadcast($"You don't have enough money to purchase {selectedBusiness.name}. Cost: {finalCost} Crows", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.white);
+                        BusinessUIManager.Instance.ToggleBusinessUI();
+                        Lib.GameMessage.Broadcast($"You don't have enough money to purchase {selectedBusiness.name}. Required Crows: {finalCost}", InterfaceController.GameMessageType.notification, InterfaceControls.Icon.building, Color.white);
                 }
+
 
                 // Log the action
                 Plugin.Logger.LogInfo($"Purchase initiated for business: {selectedBusiness.name} (ID: {selectedBusiness.id})");
@@ -1429,6 +1416,30 @@ namespace BackInBusiness
             {
                 Plugin.Logger.LogError($"Error purchasing business: {ex.Message}\n{ex.StackTrace}");
             }
+        }
+
+        private void BuyBusiness(int finalCost, NewAddress selectedBusiness, int selectedBusinessIndex)
+        {
+            GameplayController.Instance.AddMoney(-finalCost, true, $"Purchased business: {selectedBusiness.name}");
+            availableBusinesses.RemoveAt(selectedBusinessIndex);
+            businessButtons.RemoveAt(selectedBusinessIndex);
+            Player.Instance.AddLocationOfAuthorty(selectedBusiness);
+            Player.Instance.apartmentsOwned.Add(selectedBusiness);
+            Player.Instance.AddToKeyring(selectedBusiness, false);
+
+            string purchasedBusinessName = selectedBusiness.name?.ToString() ?? "Unknown";
+
+            Plugin.Logger.LogInfo($"Deducted {finalCost} Crows for purchasing {purchasedBusinessName}");
+
+            DisplayBusinessPurchaseWithCallback(purchasedBusinessName);
+
+            string purchaseDate = SessionData.Instance.TimeAndDate(SessionData.Instance.gameTime, true, true, true);
+
+            BusinessManager.Instance.AddOwnedBusiness(selectedBusiness, purchasedBusinessName, finalCost, purchaseDate);
+
+            Plugin.Logger.LogInfo($"Business {purchasedBusinessName} purchased and added to owned apartments");
+                    
+            BusinessUIManager.Instance.ToggleBusinessUI();
         }
     }
 }

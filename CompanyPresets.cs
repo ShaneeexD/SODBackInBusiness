@@ -9,35 +9,35 @@ namespace BackInBusiness
 {
     public class CompanyPresets
     {
-    
-        public (string, int)[] CompanyPresetsList = {
-            ("AmericanDiner", 5000),
-            ("Ballroom", 100000),
-            ("Bar", 5000),
-            ("BlackmarketSyncClinic", 20000),
-            ("BlackmarketTrader", 25000),
-            ("BuildingManagement", 30000),
-            ("Chemist", 35000),
-            ("ChineseEatery", 7500),
-            ("CityHall", 100000),
-            ("EnforcerBranch", 50000),
-            ("FastFood", 3500),
-            ("GamblingDen", 30000),
-            ("HardwareStore", 25000),
-            ("HospitalWing", 50000),
-            ("IndustrialOffice", 30000),
-            ("IndustrialPlant", 15000),
-            ("Laboratory", 120000),
-            ("Landlord", 90000),
-            ("Launderette", 2500),
-            ("LoanShark", 35000),
-            ("MediumOffice", 25000),
-            ("PawnShop", 15000),
-            ("StreetFoodVendorSnacks", 1500),
-            ("Supermarket", 15000),
-            ("SyncClinic", 50000),
-            ("WeaponsDealer", 30000),
-            ("WorkplaceCanteen", 2000)
+        // Preset | Price | Social Credit Level
+        public (string, int, int)[] CompanyPresetsList = {
+            ("AmericanDiner", Plugin.AmericanDinerPrice.Value, Plugin.AmericanDinerSCL.Value),
+            ("Ballroom", Plugin.BallroomPrice.Value, Plugin.BallroomPriceSCL.Value),
+            ("Bar", Plugin.BarPrice.Value, Plugin.BarPriceSCL.Value),
+            ("BlackmarketSyncClinic", Plugin.BlackmarketSyncClinicPrice.Value, Plugin.BlackmarketSyncClinicPriceSCL.Value),
+            ("BlackmarketTrader", Plugin.BlackmarketTraderPrice.Value, Plugin.BlackmarketTraderPriceSCL.Value),
+            ("BuildingManagement", Plugin.BuildingManagementPrice.Value, Plugin.BuildingManagementPriceSCL.Value),
+            ("Chemist", Plugin.ChemistPrice.Value, Plugin.ChemistPriceSCL.Value),
+            ("ChineseEatery", Plugin.ChineseEateryPrice.Value, Plugin.ChineseEateryPriceSCL.Value),
+            ("CityHall", Plugin.CityHallPrice.Value, Plugin.CityHallPriceSCL.Value),
+            ("EnforcerBranch", Plugin.EnforcerBranchPrice.Value, Plugin.EnforcerBranchPriceSCL.Value),
+            ("FastFood", Plugin.FastFoodPrice.Value, Plugin.FastFoodPriceSCL.Value),
+            ("GamblingDen", Plugin.GamblingDenPrice.Value, Plugin.GamblingDenPriceSCL.Value),
+            ("HardwareStore", Plugin.HardwareStorePrice.Value, Plugin.HardwareStorePriceSCL.Value),
+            ("HospitalWing", Plugin.HospitalWingPrice.Value, Plugin.HospitalWingPriceSCL.Value),
+            ("IndustrialOffice", Plugin.IndustrialOfficePrice.Value, Plugin.IndustrialOfficePriceSCL.Value),
+            ("IndustrialPlant", Plugin.IndustrialPlantPrice.Value, Plugin.IndustrialPlantPriceSCL.Value),
+            ("Laboratory", Plugin.LaboratoryPrice.Value, Plugin.LaboratoryPriceSCL.Value),
+            ("Landlord", Plugin.LandlordPrice.Value, Plugin.LandlordPriceSCL.Value),
+            ("Launderette", Plugin.LaunderettePrice.Value, Plugin.LaunderettePriceSCL.Value),
+            ("LoanShark", Plugin.LoanSharkPrice.Value, Plugin.LoanSharkPriceSCL.Value),
+            ("MediumOffice", Plugin.MediumOfficePrice.Value, Plugin.MediumOfficePriceSCL.Value),
+            ("PawnShop", Plugin.PawnShopPrice.Value, Plugin.PawnShopPriceSCL.Value),
+            ("StreetFoodVendorSnacks", Plugin.StreetFoodVendorSnacksPrice.Value, Plugin.StreetFoodVendorSnacksPriceSCL.Value),
+            ("Supermarket", Plugin.SupermarketPrice.Value, Plugin.SupermarketPriceSCL.Value),
+            ("SyncClinic", Plugin.SyncClinicPrice.Value, Plugin.SyncClinicPriceSCL.Value),
+            ("WeaponsDealer", Plugin.WeaponsDealerPrice.Value, Plugin.WeaponsDealerPriceSCL.Value),
+            ("WorkplaceCanteen", Plugin.WorkplaceCanteenPrice.Value, Plugin.WorkplaceCanteenPriceSCL.Value)
         };
 
         public (string, string)[] CompanyPresetsMapping = {
