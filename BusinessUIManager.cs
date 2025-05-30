@@ -1474,9 +1474,70 @@ namespace BackInBusiness
                     
             BusinessUIManager.Instance.ToggleBusinessUI();
 
+            // Set jobs for all occupants in the business
             foreach (Citizen citizen in selectedBusiness.thisAsAddress.currentOccupants)
             {
-                //citizen.SetJob(OccupationPreset.workType.Office);
+                try
+                {
+                    // Create a new Occupation object manually
+                    Occupation newJob = new Occupation();
+                    
+                    // Find an appropriate preset for office work from loaded resources
+                    OccupationPreset officePreset = null;
+                    foreach (OccupationPreset preset in Resources.FindObjectsOfTypeAll<OccupationPreset>())
+                    {
+                        if (preset.work == OccupationPreset.workType.Office)
+                        {
+                            officePreset = preset;
+                            break;
+                        }
+                    }
+                    
+                    if (officePreset == null)
+                    {
+                        Plugin.Logger.LogWarning($"Could not find Office job preset for {citizen.citizenObjectPreset.name}");
+                        continue;
+                    }
+                    // Set up the job properties
+                    newJob.preset = officePreset;
+                    newJob.employer = selectedBusiness.thisAsAddress.company;
+                    newJob.name = Strings.Get("jobs", officePreset.name, Strings.Casing.asIs, false, false, false, null);
+                    newJob.paygrade = 0.5f;
+                    newJob.work = OccupationPreset.workType.Office;
+                    
+                    // Set up work hours (9 AM to 5 PM, Monday to Friday)
+                    newJob.startTimeDecimalHour = 7.35f;
+                    newJob.endTimeDecialHour = 15.20f;
+                    newJob.workHours = newJob.endTimeDecialHour - newJob.startTimeDecimalHour;
+                    
+                    // Set up work days (Monday to Friday)
+                    newJob.workDaysList = new Il2CppSystem.Collections.Generic.List<SessionData.WeekDay>();
+                    newJob.workDaysList.Add(SessionData.WeekDay.monday);
+                    newJob.workDaysList.Add(SessionData.WeekDay.tuesday);
+                    newJob.workDaysList.Add(SessionData.WeekDay.wednesday);
+                    newJob.workDaysList.Add(SessionData.WeekDay.thursday);
+                    newJob.workDaysList.Add(SessionData.WeekDay.friday);
+                    
+                    // Set up salary
+                    float salaryAmount = 30.0f; // Base salary
+                    newJob.salary = salaryAmount;
+                    newJob.salaryString = CityControls.Instance.cityCurrency + Mathf.RoundToInt(salaryAmount * 1000f).ToString();
+                    
+                    // Set the job for the citizen
+                    citizen.SetJob(newJob);
+                    
+                    // Add the job to the city's job directory
+                    if (!CityData.Instance.assignedJobsDirectory.Contains(newJob))
+                    {
+                        CityData.Instance.assignedJobsDirectory.Add(newJob);
+                    }
+                    
+                    Plugin.Logger.LogInfo($"Set job for {citizen.GetCitizenName()} at {selectedBusiness.name}");
+                }
+                catch (System.Exception ex)
+                {
+                    Plugin.Logger.LogError($"Error setting job for {citizen.GetCitizenName()}: {ex.Message}");
+                }
             }
             
         }
