@@ -13,6 +13,7 @@ using Il2CppSystem;
 using UniverseLib.Config;
 using System.Runtime.InteropServices;
 using SOD.Common;
+using SOD.Common.Extensions;
 
 namespace BackInBusiness
 {
@@ -1299,6 +1300,7 @@ namespace BackInBusiness
         
         private void PurchaseSelectedBusiness()
         {
+
             if (selectedBusinessIndex < 0 || selectedBusinessIndex >= availableBusinesses.Count)
             {
                 Plugin.Logger.LogWarning("No business selected for purchase");
@@ -1318,7 +1320,7 @@ namespace BackInBusiness
                 string presetName = selectedBusiness.company.preset.name;
                 string businessType = "Unknown";
                 int socialCreditLevel = 0;
-                
+
                 // Find the matching preset and get its base cost
                 for (int i = 0; i < companyPresets.CompanyPresetsList.Length; i++)
                 {
@@ -1351,7 +1353,7 @@ namespace BackInBusiness
                 string floorName = selectedBusinessData.FloorName;
                 
                 // Check if this is an office or laboratory type that should have floor multiplier
-                if (presetName == "IndustrialOffice" || presetName == "MediumOffice" || presetName == "Laboratory")
+                if (presetName == "IndustrialOffice" || presetName == "MediumOffice" || presetName == "Laboratory" || presetName == "EnforcerBranch")
                 {
                     // Extract floor number from the floor name (in parentheses at the end)
                     if (floorName.Contains("(Floor "))
@@ -1418,12 +1420,43 @@ namespace BackInBusiness
             }
         }
 
+
+        
         private void BuyBusiness(int finalCost, NewAddress selectedBusiness, int selectedBusinessIndex)
         {
             GameplayController.Instance.AddMoney(-finalCost, true, $"Purchased business: {selectedBusiness.name}");
             availableBusinesses.RemoveAt(selectedBusinessIndex);
             businessButtons.RemoveAt(selectedBusinessIndex);
             Player.Instance.AddLocationOfAuthorty(selectedBusiness);
+            try
+            {
+                CityData cityData = CityData.Instance;
+                var building = selectedBusiness.building;
+                string buildingName = building.name;
+                string presetName = selectedBusiness.company.preset.name;
+                
+                if(presetName == "IndustrialOffice" || presetName == "IndustrialPlant" || presetName == "WorkplaceCanteen")
+                {
+                    foreach (var gameLocation in cityData.gameLocationDirectory)
+                    {
+                        if (gameLocation != null && gameLocation.building != null && 
+                        gameLocation.building.name == buildingName)
+                        {
+                            if(gameLocation.name.Contains("landing") || gameLocation.name.Contains("lobby"))
+                            {
+                                // Add all rooms in this building
+                                Player.Instance.AddLocationOfAuthorty(gameLocation);
+                                Plugin.Logger.LogInfo($"Added location from building: {gameLocation.name}");
+                            }
+                        }              
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error in comprehensive lobby authorization: {ex.Message}");
+            }
+            
             Player.Instance.apartmentsOwned.Add(selectedBusiness);
             Player.Instance.AddToKeyring(selectedBusiness, false);
 
@@ -1440,6 +1473,12 @@ namespace BackInBusiness
             Plugin.Logger.LogInfo($"Business {purchasedBusinessName} purchased and added to owned apartments");
                     
             BusinessUIManager.Instance.ToggleBusinessUI();
+
+            foreach (Citizen citizen in selectedBusiness.thisAsAddress.currentOccupants)
+            {
+                //citizen.SetJob(OccupationPreset.workType.Office);
+            }
+            
         }
     }
 }
