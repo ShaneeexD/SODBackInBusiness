@@ -1474,11 +1474,19 @@ namespace BackInBusiness
                     
             BusinessUIManager.Instance.ToggleBusinessUI();
 
-            // Set jobs for all occupants in the business
-            foreach (Citizen citizen in selectedBusiness.thisAsAddress.currentOccupants)
+            // Set jobs for all occupants in the business that are citizens
+            foreach (Actor actor in selectedBusiness.thisAsAddress.currentOccupants)
             {
                 try
                 {
+                    // Check if the actor is a Citizen (SetJob only works on Citizens)
+                    Citizen citizen = actor as Citizen;
+                    if (citizen == null)
+                    {
+                        Plugin.Logger.LogInfo($"Skipping job assignment for non-citizen occupant in {selectedBusiness.name}");
+                        continue;
+                    }
+                    
                     // Create a new Occupation object manually
                     Occupation newJob = new Occupation();
                     
@@ -1491,25 +1499,29 @@ namespace BackInBusiness
                             officePreset = preset;
                             break;
                         }
+                        if(preset.presetName == OccupationPresets.OccupationPresetsMapping[i].Item1)
+                        {
+                            officePreset = preset;
+                            break;
+                        }
                     }
                     
                     if (officePreset == null)
                     {
-                        Plugin.Logger.LogWarning($"Could not find Office job preset for {citizen.citizenObjectPreset.name}");
+                        Plugin.Logger.LogWarning($"Could not find Office job preset for {citizen.GetCitizenName()}");
                         continue;
                     }
+                    
                     // Set up the job properties
                     newJob.preset = officePreset;
                     newJob.employer = selectedBusiness.thisAsAddress.company;
                     newJob.name = Strings.Get("jobs", officePreset.name, Strings.Casing.asIs, false, false, false, null);
                     newJob.paygrade = 0.5f;
                     newJob.work = OccupationPreset.workType.Office;
-                    
                     // Set up work hours (9 AM to 5 PM, Monday to Friday)
                     newJob.startTimeDecimalHour = 7.35f;
                     newJob.endTimeDecialHour = 15.20f;
                     newJob.workHours = newJob.endTimeDecialHour - newJob.startTimeDecimalHour;
-                    
                     // Set up work days (Monday to Friday)
                     newJob.workDaysList = new Il2CppSystem.Collections.Generic.List<SessionData.WeekDay>();
                     newJob.workDaysList.Add(SessionData.WeekDay.monday);
@@ -1536,7 +1548,7 @@ namespace BackInBusiness
                 }
                 catch (System.Exception ex)
                 {
-                    Plugin.Logger.LogError($"Error setting job for {citizen.GetCitizenName()}: {ex.Message}");
+                    Plugin.Logger.LogError($"Error setting job for occupant in {selectedBusiness.name}: {ex.Message}");
                 }
             }
             
