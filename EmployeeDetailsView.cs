@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using UniverseLib;
 using UniverseLib.UI;
 using UniverseLib.UI.Models;
+using SOD.Common;
 
 namespace BackInBusiness
 {
@@ -29,31 +30,27 @@ namespace BackInBusiness
             rt.anchorMax = new Vector2(1f, 1f);
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
-            // Make sure this subview renders on top of ScrollView (which may have its own Canvas)
-            var canvas = root.GetComponent<Canvas>();
-            if (canvas == null) canvas = root.AddComponent<Canvas>();
-            canvas.overrideSorting = true;
-            canvas.sortingOrder = 100;
-            if (root.GetComponent<GraphicRaycaster>() == null)
-                root.AddComponent<GraphicRaycaster>();
-            // Also ensure it's the last sibling in hierarchy for safety
+            // Use parent panel's Canvas; do not add our own to avoid cross-canvas sorting issues.
+            // Ensure we're the last sibling so our children draw above the panel content background.
             root.transform.SetAsLastSibling();
 
             // Portrait (bigger)
             var portraitGO = UIFactory.CreateUIObject("Emp_Portrait", root);
             portrait = portraitGO.AddComponent<RawImage>();
             var pRt = portraitGO.GetComponent<RectTransform>();
-            pRt.anchorMin = new Vector2(0f, 0.5f);
-            pRt.anchorMax = new Vector2(0f, 0.5f);
-            pRt.pivot = new Vector2(0f, 0.5f);
-            pRt.anchoredPosition = new Vector2(12f, 0f);
+            // Top-left anchored
+            pRt.anchorMin = new Vector2(0f, 1f);
+            pRt.anchorMax = new Vector2(0f, 1f);
+            pRt.pivot = new Vector2(0f, 1f);
+            pRt.anchoredPosition = new Vector2(12f, -20f);
             pRt.sizeDelta = new Vector2(80f, 80f);
 
             // Name
-            nameText = UIFactory.CreateLabel(root, "Emp_Name", "Name", TextAnchor.LowerLeft);
+            nameText = UIFactory.CreateLabel(root, "Emp_Name", "Name", TextAnchor.UpperLeft);
             var nameRt = nameText.GetComponent<RectTransform>();
-            nameRt.anchorMin = new Vector2(0.18f, 0.55f);
-            nameRt.anchorMax = new Vector2(0.70f, 0.95f);
+            // Top row to the right of portrait
+            nameRt.anchorMin = new Vector2(0.18f, 0.82f);
+            nameRt.anchorMax = new Vector2(0.98f, 0.98f);
             nameRt.offsetMin = Vector2.zero;
             nameRt.offsetMax = Vector2.zero;
             nameText.fontSize = 18;
@@ -63,18 +60,20 @@ namespace BackInBusiness
             // Job title
             jobText = UIFactory.CreateLabel(root, "Emp_Job", "Job", TextAnchor.UpperLeft);
             var jobRt = jobText.GetComponent<RectTransform>();
-            jobRt.anchorMin = new Vector2(0.18f, 0.30f);
-            jobRt.anchorMax = new Vector2(0.70f, 0.55f);
+            // Second row under name
+            jobRt.anchorMin = new Vector2(0.18f, 0.65f);
+            jobRt.anchorMax = new Vector2(0.98f, 0.82f);
             jobRt.offsetMin = Vector2.zero;
             jobRt.offsetMax = Vector2.zero;
             jobText.fontSize = 14;
             jobText.color = new Color(0.9f, 0.9f, 0.9f, 1f);
 
             // Salary
-            salaryText = UIFactory.CreateLabel(root, "Emp_Salary", "Salary", TextAnchor.MiddleLeft);
+            salaryText = UIFactory.CreateLabel(root, "Emp_Salary", "Salary", TextAnchor.UpperLeft);
             var salRt = salaryText.GetComponent<RectTransform>();
-            salRt.anchorMin = new Vector2(0.18f, 0.05f);
-            salRt.anchorMax = new Vector2(0.70f, 0.30f);
+            // Third row under job
+            salRt.anchorMin = new Vector2(0.18f, 0.50f);
+            salRt.anchorMax = new Vector2(0.98f, 0.65f);
             salRt.offsetMin = Vector2.zero;
             salRt.offsetMax = Vector2.zero;
             salaryText.fontSize = 14;
@@ -85,12 +84,15 @@ namespace BackInBusiness
             var bgImg = bg.GetComponent<UnityEngine.UI.Image>();
             if (bgImg == null) bgImg = bg.AddComponent<UnityEngine.UI.Image>();
             // Make it clearly visible
-            bgImg.color = new Color(0.12f, 0.12f, 0.12f, 0.85f);
+            bgImg.color = new Color(0.12f, 0.12f, 0.12f, 1f);
+            // Do not block clicks and make sure it renders behind all other children
+            bgImg.raycastTarget = false;
             var bgRt = bg.GetComponent<RectTransform>();
             bgRt.anchorMin = new Vector2(0f, 0f);
             bgRt.anchorMax = new Vector2(1f, 1f);
             bgRt.offsetMin = Vector2.zero;
             bgRt.offsetMax = Vector2.zero;
+            try { bg.transform.SetAsFirstSibling(); Plugin.Logger.LogInfo("Emp_BG moved to first sibling (behind content)"); } catch { }
             // Ensure the background renders behind other children
             try { bg.transform.SetAsFirstSibling(); } catch { }
 
@@ -120,6 +122,20 @@ namespace BackInBusiness
                 Plugin.Logger.LogInfo("Fire clicked (todo)");
             };
 
+            // Center debug label to confirm visibility
+            try
+            {
+                Text dbgCenter = UIFactory.CreateLabel(root, "Emp_DebugCenter", "EMP DETAILS DEBUG", TextAnchor.MiddleCenter);
+                var dcrt = dbgCenter.GetComponent<RectTransform>();
+                dcrt.anchorMin = new Vector2(0.1f, 0.35f);
+                dcrt.anchorMax = new Vector2(0.9f, 0.65f);
+                dcrt.offsetMin = Vector2.zero;
+                dcrt.offsetMax = Vector2.zero;
+                dbgCenter.fontSize = 20;
+                dbgCenter.color = new Color(1f, 0.95f, 0.2f, 1f);
+            }
+            catch { }
+
             Hide();
             Plugin.Logger.LogInfo("EmployeeDetailsView.Build complete (hidden by default)");
         }
@@ -140,9 +156,21 @@ namespace BackInBusiness
         {
             try
             {
-                Plugin.Logger.LogInfo($"EmployeeDetailsView.Show citizen={(citizen != null ? citizen.GetCitizenName() : "<null>")}, occ={(occ != null ? (string.IsNullOrEmpty(occ.name) ? (occ.preset != null ? occ.preset.name : "<no preset>") : occ.name) : "<null>")}");
+                string empObjInfo = "<none>";
+                try { if (occ != null && occ.employee != null) empObjInfo = occ.employee.ToString(); } catch { }
+                Plugin.Logger.LogInfo($"EmployeeDetailsView.Show citizen={(citizen != null ? citizen.GetCitizenName() : "<null>")}, occ={(occ != null ? (string.IsNullOrEmpty(occ.name) ? (occ.preset != null ? occ.preset.name : "<no preset>") : occ.name) : "<null>")}, empObj={empObjInfo}");
                 if (root == null) return;
                 root.SetActive(true);
+                // Ensure alpha and interaction are enabled
+                try
+                {
+                    var cg = root.GetComponent<CanvasGroup>();
+                    if (cg == null) cg = root.AddComponent<CanvasGroup>();
+                    cg.alpha = 1f;
+                    cg.interactable = true;
+                    cg.blocksRaycasts = true;
+                }
+                catch { }
 
                 // Fallback: if citizen not provided, try to obtain it from the occupation
                 if (citizen == null && occ != null)
@@ -164,8 +192,10 @@ namespace BackInBusiness
                     }
                 }
 
-                // Name
-                nameText.text = citizen != null ? citizen.GetCitizenName() : "Vacant";
+                // Name (fallback to occ.employee if not a Citizen)
+                string fallbackName = null;
+                try { if (occ != null && occ.employee != null && occ.employee.name != null) fallbackName = occ.employee.name.ToString(); } catch { }
+                nameText.text = citizen != null ? citizen.GetCitizenName() : (!string.IsNullOrEmpty(fallbackName) ? fallbackName : "Vacant");
 
                 // Job
                 string role = "Worker";
@@ -194,6 +224,18 @@ namespace BackInBusiness
                 }
                 catch { }
                 salaryText.text = salaryStr;
+                try { Canvas.ForceUpdateCanvases(); } catch { }
+                // Log rects
+                try
+                {
+                    var rt = root.GetComponent<RectTransform>();
+                    Plugin.Logger.LogInfo($"EmpDetails rect: {rt.rect.width}x{rt.rect.height}");
+                    Plugin.Logger.LogInfo($"Portrait pos={portrait.rectTransform.anchoredPosition} size={portrait.rectTransform.rect.size}");
+                    Plugin.Logger.LogInfo($"Name rect size={nameText.rectTransform.rect.size}");
+                    Plugin.Logger.LogInfo($"Job rect size={jobText.rectTransform.rect.size}");
+                    Plugin.Logger.LogInfo($"Salary rect size={salaryText.rectTransform.rect.size}");
+                }
+                catch { }
                 Plugin.Logger.LogInfo("EmployeeDetailsView.Show populated UI successfully");
             }
             catch (Exception ex)
@@ -290,16 +332,22 @@ namespace BackInBusiness
                 if (root == null) return;
                 var parentCanvas = root.GetComponentInParent<Canvas>();
                 var ownCanvas = root.GetComponent<Canvas>();
-                if (ownCanvas == null) ownCanvas = root.AddComponent<Canvas>();
-                ownCanvas.overrideSorting = true;
-                int parentOrder = parentCanvas != null ? parentCanvas.sortingOrder : 5000;
-                if (parentOrder < 0) parentOrder = 20000;
-                int desired = parentOrder + 20;
-                if (desired > 32760) desired = 32760;
-                if (desired < -32760) desired = -32760;
-                ownCanvas.sortingOrder = desired;
+                if (ownCanvas != null)
+                {
+                    try
+                    {
+                        ownCanvas.overrideSorting = true;
+                        int parentOrder = parentCanvas != null ? parentCanvas.sortingOrder : 5000;
+                        if (parentOrder < 0) parentOrder = 20000;
+                        int desired = parentOrder + 10;
+                        if (desired > 32760) desired = 32760;
+                        if (desired < -32760) desired = -32760;
+                        ownCanvas.sortingOrder = desired;
+                    }
+                    catch { }
+                }
                 root.transform.SetAsLastSibling();
-                Plugin.Logger.LogInfo($"EmpDetails BringToFront parentOrder={parentOrder} set ownOrder={ownCanvas.sortingOrder}");
+                try { Plugin.Logger.LogInfo("EmpDetails BringToFront done (sibling last)"); } catch { }
             }
             catch (Exception ex)
             {

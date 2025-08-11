@@ -225,6 +225,7 @@ namespace BackInBusiness
         private readonly List<GameObject> openEmployeeWindowContainers = new List<GameObject>();
         private readonly System.Collections.Generic.Dictionary<GameObject, EmployeeDetailsView> employeeWindowViews = new System.Collections.Generic.Dictionary<GameObject, EmployeeDetailsView>();
         private GameObject employeeWindowsOverlay; // overlay parent for floating windows (ignored by layout)
+        private readonly System.Collections.Generic.List<FloatingEmployeePanel> openEmployeePanels = new System.Collections.Generic.List<FloatingEmployeePanel>();
         
         // Required abstract properties
         public override string Name => "Business Management";
@@ -984,9 +985,11 @@ namespace BackInBusiness
                         // Clickable overlay to open the details view
                         try
                         {
-                            var occLocal = occ;
-                            Citizen citizenLocal = null;
-                            try { citizenLocal = occLocal != null ? occLocal.employee as Citizen : null; } catch { }
+                            // Capture stable identifiers only; re-resolve IL2CPP objects on click
+                            int rosterIndex = i;
+                            int addressIdForClick = selectedOwnedBusiness.AddressId;
+                            string empNameForClick = empName; // captured for fallback matching
+                            string roleForClick = role;       // captured for fallback matching
 
                             ButtonRef rowBtn = UIFactory.CreateButton(row, $"EmployeeRowBtn_{i}", "");
                             // Clear text and make the button background invisible but still clickable
@@ -1004,7 +1007,50 @@ namespace BackInBusiness
                             {
                                 try
                                 {
-                                    CreateEmployeeWindow(citizenLocal, occLocal);
+                                    Occupation occNow = null;
+                                    Citizen citizenNow = null;
+                                    // Re-fetch the apartment and roster at click time to avoid stale/null IL2CPP refs
+                                    var aptNow = FindApartmentById(addressIdForClick);
+                                    try { Plugin.Logger.LogInfo($"EmpRowClick: addr={addressIdForClick}, idx={rosterIndex}, aptNow={(aptNow!=null ? aptNow.name : "<null>")}"); } catch { }
+                                    if (aptNow != null && aptNow.company != null && aptNow.company.companyRoster != null)
+                                    {
+                                        if (rosterIndex >= 0 && rosterIndex < aptNow.company.companyRoster.Count)
+                                        {
+                                            occNow = aptNow.company.companyRoster[rosterIndex];
+                                            try { if (occNow != null) citizenNow = occNow.employee as Citizen; } catch { }
+                                        }
+
+                                        // Fallback: find by displayed name/role if index-based lookup failed
+                                        if ((occNow == null || citizenNow == null) && aptNow.company.companyRoster.Count > 0)
+                                        {
+                                            try
+                                            {
+                                                for (int r = 0; r < aptNow.company.companyRoster.Count; r++)
+                                                {
+                                                    var o = aptNow.company.companyRoster[r];
+                                                    if (o == null) continue;
+                                                    string oRole = null;
+                                                    try { if (!string.IsNullOrEmpty(o.name)) oRole = o.name; else if (o.preset != null) oRole = o.preset.name; } catch { }
+                                                    Citizen cTry = null;
+                                                    try { cTry = o.employee as Citizen; } catch { }
+                                                    string cName = null;
+                                                    try { if (cTry != null) cName = cTry.GetCitizenName(); else if (o.employee != null && o.employee.name != null) cName = o.employee.name.ToString(); } catch { }
+                                                    bool nameMatch = !string.IsNullOrEmpty(empNameForClick) && !string.IsNullOrEmpty(cName) && cName == empNameForClick;
+                                                    bool roleMatch = !string.IsNullOrEmpty(roleForClick) && !string.IsNullOrEmpty(oRole) && oRole == roleForClick;
+                                                    if (nameMatch || roleMatch)
+                                                    {
+                                                        occNow = o;
+                                                        citizenNow = cTry;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            catch { }
+                                        }
+                                    }
+                                    try { Plugin.Logger.LogInfo($"EmpRowClick: occNow={(occNow!=null ? (string.IsNullOrEmpty(occNow.name)? (occNow.preset!=null?occNow.preset.name:"<no preset>") : occNow.name) : "<null>")}, citizenNow={(citizenNow!=null?citizenNow.GetCitizenName():"<null>")}"); } catch { }
+                                    // Pass address and index to panel for robust re-resolution inside the panel
+                                    CreateEmployeeWindow(addressIdForClick, rosterIndex);
                                 }
                                 catch (System.Exception ex)
                                 {
@@ -1618,95 +1664,43 @@ namespace BackInBusiness
 
         }
 
-        // Create a floating employee detail window on the right side
-        private void CreateEmployeeWindow(Citizen citizen, Occupation occ)
+        // Create a floating employee detail window using a UniverseLib Panel (built-in draggable header)
+        private void CreateEmployeeWindow(int addressId, int rosterIndex)
         {
-            if (ContentRoot == null) return;
-            // Ensure the overlay is visible when opening a window
-            try { if (employeeWindowsOverlay != null && !employeeWindowsOverlay.activeSelf) employeeWindowsOverlay.SetActive(true); } catch { }
+            if (this.Owner == null) return;
+            // We no longer need a custom overlay/drag handler; use PanelBase which already supports dragging.
+            try { if (employeeWindowsOverlay != null && employeeWindowsOverlay.activeSelf) employeeWindowsOverlay.SetActive(false); } catch { }
+            // Re-resolve using addressId and rosterIndex
+            Citizen citizen = null;
+            Occupation occ = null;
+            try
+            {
+                var apt = FindApartmentById(addressId);
+                if (apt != null && apt.company != null && apt.company.companyRoster != null)
+                {
+                    if (rosterIndex >= 0 && rosterIndex < apt.company.companyRoster.Count)
+                    {
+                        occ = apt.company.companyRoster[rosterIndex];
+                        try { if (occ != null) citizen = occ.employee as Citizen; } catch { }
+                    }
+                }
+            }
+            catch { }
+
             string name = citizen != null ? citizen.GetCitizenName() : (occ != null && occ.employee != null ? occ.employee.name?.ToString() : "Employee");
-            string goName = $"EmpWindow_{openEmployeeWindowContainers.Count + 1}_{name}";
-            // Parent to overlay so layout groups on ContentRoot can't affect it
-            GameObject parentForWindows = employeeWindowsOverlay != null ? employeeWindowsOverlay : ContentRoot;
-            GameObject win = UIFactory.CreateUIObject(goName, parentForWindows);
-            RectTransform rt = win.GetComponent<RectTransform>();
-            // Ensure this window is ignored by any parent layout system
-            var winLe = win.GetComponent<LayoutElement>();
-            if (winLe == null) winLe = win.AddComponent<LayoutElement>();
-            winLe.ignoreLayout = true;
-            rt.pivot = new UnityEngine.Vector2(0.5f, 0.5f);
-            // Cascade windows vertically on the right side
-            int idx = openEmployeeWindowContainers.Count;
-            float topStart = 0.95f - (idx * 0.38f);
-            float bottom = topStart - 0.35f;
-            if (bottom < 0.06f) { bottom = 0.06f; topStart = bottom + 0.35f; }
-            rt.anchorMin = new UnityEngine.Vector2(0.60f, bottom);
-            rt.anchorMax = new UnityEngine.Vector2(0.98f, topStart);
-            rt.offsetMin = UnityEngine.Vector2.zero;
-            rt.offsetMax = UnityEngine.Vector2.zero;
-            try { win.transform.SetAsLastSibling(); } catch { }
+            try
+            {
+                string occLabel = occ != null ? (string.IsNullOrEmpty(occ.name) ? (occ.preset != null ? occ.preset.name : "<no preset>") : occ.name) : "<null>";
+                string citLabel = citizen != null ? citizen.GetCitizenName() : "<null>";
+                Plugin.Logger.LogInfo($"CreateEmployeeWindow: addr={addressId}, idx={rosterIndex}, name={name}, citizen={citLabel}, occ={occLabel}");
+            }
+            catch { }
 
-            // Canvas and sorting
-            var canvas = win.GetComponent<Canvas>();
-            if (canvas == null) canvas = win.AddComponent<Canvas>();
-            canvas.overrideSorting = true;
-            int overlayBase = employeeWindowsOverlay != null ? GetTopCanvasOrder(employeeWindowsOverlay) : GetTopCanvasOrder(ContentRoot);
-            int baseOrder = overlayBase + 10 + (idx * 2);
-            if (baseOrder > 32760) baseOrder = 32760;
-            if (baseOrder < -32760) baseOrder = -32760;
-            canvas.sortingOrder = baseOrder;
-            if (win.GetComponent<GraphicRaycaster>() == null) win.AddComponent<GraphicRaycaster>();
-            var cg = win.GetComponent<CanvasGroup>();
-            if (cg == null) cg = win.AddComponent<CanvasGroup>();
-            cg.alpha = 1f; cg.interactable = true; cg.blocksRaycasts = true;
-
-            // Background
-            Image bg = win.GetComponent<Image>();
-            if (bg == null) bg = win.AddComponent<Image>();
-            bg.color = new Color(0.10f, 0.10f, 0.10f, 0.95f);
-            bg.raycastTarget = true;
-
-            // Title bar
-            Text title = UIFactory.CreateLabel(win, $"EmpWinTitle_{idx}", $"{name} Details", TextAnchor.MiddleLeft);
-            title.fontSize = 16; title.fontStyle = FontStyle.Bold; title.color = Color.white;
-            RectTransform titleRt = title.GetComponent<RectTransform>();
-            titleRt.anchorMin = new UnityEngine.Vector2(0.03f, 0.92f);
-            titleRt.anchorMax = new UnityEngine.Vector2(0.85f, 0.98f);
-            titleRt.offsetMin = UnityEngine.Vector2.zero; titleRt.offsetMax = UnityEngine.Vector2.zero;
-
-            // Close button
-            ButtonRef closeBtn = UIFactory.CreateButton(win, $"EmpWinClose_{idx}", "Close");
-            closeBtn.ButtonText.fontSize = 12;
-            RectTransform closeRt = closeBtn.Component.GetComponent<RectTransform>();
-            closeRt.anchorMin = new UnityEngine.Vector2(0.86f, 0.92f);
-            closeRt.anchorMax = new UnityEngine.Vector2(0.97f, 0.98f);
-            closeRt.offsetMin = UnityEngine.Vector2.zero; closeRt.offsetMax = UnityEngine.Vector2.zero;
-            SetupButton(closeBtn, new Color(0.7f, 0.2f, 0.2f, 1f));
-            closeBtn.OnClick += () => { try { CloseEmployeeWindow(win); } catch { } };
-
-            // Details view root (fills window below title bar)
-            GameObject content = UIFactory.CreateUIObject($"EmpWinContent_{idx}", win);
-            RectTransform contentRt = content.GetComponent<RectTransform>();
-            contentRt.anchorMin = new UnityEngine.Vector2(0.02f, 0.04f);
-            contentRt.anchorMax = new UnityEngine.Vector2(0.98f, 0.90f);
-            contentRt.offsetMin = UnityEngine.Vector2.zero; contentRt.offsetMax = UnityEngine.Vector2.zero;
-            var contentLe = content.GetComponent<LayoutElement>();
-            if (contentLe == null) contentLe = content.AddComponent<LayoutElement>();
-            contentLe.ignoreLayout = true;
-
-            // Build and show details view inside the window
-            var view = new EmployeeDetailsView();
-            view.Build(content); // Fill parent; no ConfigureAsPanelLayout in floating window
-            view.Show(citizen, occ);
-            try { view.BringToFront(); } catch { }
-
-            // Track window and view
-            openEmployeeWindowContainers.Add(win);
-            if (!employeeWindowViews.ContainsKey(win)) employeeWindowViews.Add(win, view);
-
-            // Ensure visible
-            win.SetActive(true);
-            try { Canvas.ForceUpdateCanvases(); } catch { }
+            // Push init args so the panel can pop them during ConstructPanelContent (which runs before ctor body under IL2CPP)
+            try { FloatingEmployeePanel.PushInit(addressId, rosterIndex, citizen, occ, $"{name} Details"); } catch { }
+            var panel = new FloatingEmployeePanel(this.Owner, $"{name} Details", openEmployeePanels.Count);
+            panel.SetActive(true);
+            openEmployeePanels.Add(panel);
         }
 
         private int GetTopCanvasOrder(GameObject root)
@@ -1748,6 +1742,7 @@ namespace BackInBusiness
 
         private void CloseAllEmployeeWindows()
         {
+            // Close legacy GameObject-based windows (if any are still around)
             for (int i = openEmployeeWindowContainers.Count - 1; i >= 0; i--)
             {
                 var go = openEmployeeWindowContainers[i];
@@ -1755,6 +1750,15 @@ namespace BackInBusiness
             }
             openEmployeeWindowContainers.Clear();
             employeeWindowViews.Clear();
+
+            // Close new UniverseLib panel-based employee windows
+            for (int i = openEmployeePanels.Count - 1; i >= 0; i--)
+            {
+                var p = openEmployeePanels[i];
+                try { if (p != null) p.SetActive(false); } catch { }
+            }
+            openEmployeePanels.Clear();
+            try { if (employeeWindowsOverlay != null) employeeWindowsOverlay.SetActive(false); } catch { }
         }
         
         private void SelectBusiness(int index)
