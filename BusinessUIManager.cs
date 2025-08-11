@@ -729,7 +729,10 @@ namespace BackInBusiness
                         catch { }
 
                         GameObject row = UIFactory.CreateUIObject($"Employee_{i}", employeeListContainer);
-                        row.AddComponent<LayoutElement>().preferredHeight = 40;
+                        // Increase row height to better fit a square portrait
+                        var rowLE = row.AddComponent<LayoutElement>();
+                        rowLE.minHeight = 64;
+                        rowLE.preferredHeight = 64;
                         row.AddComponent<Image>().color = new Color(0.18f, 0.18f, 0.18f, 0.85f);
 
                         // Add employee photo on the left, if available
@@ -738,11 +741,12 @@ namespace BackInBusiness
                             GameObject photoGO = UIFactory.CreateUIObject($"EmployeePhoto_{i}", row);
                             RawImage photoImg = photoGO.AddComponent<RawImage>();
                             RectTransform photoRect = photoGO.GetComponent<RectTransform>();
-                            // Reserve ~12% width for photo with some vertical padding
-                            photoRect.anchorMin = new UnityEngine.Vector2(0.01f, 0.1f);
-                            photoRect.anchorMax = new UnityEngine.Vector2(0.12f, 0.9f);
-                            photoRect.offsetMin = UnityEngine.Vector2.zero;
-                            photoRect.offsetMax = UnityEngine.Vector2.zero;
+                            // Fixed square size aligned to left
+                            photoRect.anchorMin = new UnityEngine.Vector2(0f, 0.5f);
+                            photoRect.anchorMax = new UnityEngine.Vector2(0f, 0.5f);
+                            photoRect.pivot = new UnityEngine.Vector2(0f, 0.5f);
+                            photoRect.anchoredPosition = new UnityEngine.Vector2(8f, 0f);
+                            photoRect.sizeDelta = new UnityEngine.Vector2(48f, 48f);
 
                             // Try to fetch the citizen's evidence photo texture
                             Citizen citizenForPhoto = null;
@@ -766,8 +770,8 @@ namespace BackInBusiness
                         rowText.fontSize = 14;
                         rowText.color = Color.white;
                         RectTransform rowRect = rowText.GetComponent<RectTransform>();
-                        // Shift text right to leave space for the photo
-                        rowRect.anchorMin = new UnityEngine.Vector2(0.14f, 0f);
+                        // Shift text right to leave space for the fixed-size photo
+                        rowRect.anchorMin = new UnityEngine.Vector2(0.18f, 0f);
                         rowRect.anchorMax = new UnityEngine.Vector2(0.95f, 1f);
                         rowRect.offsetMin = UnityEngine.Vector2.zero;
                         rowRect.offsetMax = UnityEngine.Vector2.zero;
