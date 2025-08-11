@@ -96,18 +96,20 @@ namespace BackInBusiness
             // Ensure the background renders behind other children
             try { bg.transform.SetAsFirstSibling(); } catch { }
 
-            // Buttons container
-            GameObject btnRow = UIFactory.CreateHorizontalGroup(root, "Emp_Buttons", true, false, true, true, 8);
+            // Buttons container - bottom bar
+            GameObject btnRow = UIFactory.CreateHorizontalGroup(root, "Emp_Buttons", true, false, true, true, 12);
             var btnRt = btnRow.GetComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.72f, 0.15f);
-            btnRt.anchorMax = new Vector2(0.95f, 0.85f);
+            btnRt.anchorMin = new Vector2(0.20f, 0.06f);
+            btnRt.anchorMax = new Vector2(0.98f, 0.16f);
             btnRt.offsetMin = Vector2.zero;
             btnRt.offsetMax = Vector2.zero;
+            try { btnRow.transform.SetAsLastSibling(); } catch { }
 
             changeRoleButton = UIFactory.CreateButton(btnRow, "Emp_ChangeRole", "Change Role");
             changeRoleButton.ButtonText.fontSize = 14;
             changeRoleButton.ButtonText.color = Color.white;
             SetupButton(changeRoleButton, new Color(0.2f, 0.6f, 0.9f, 1f));
+            try { var leCR = changeRoleButton.Component.gameObject.GetComponent<LayoutElement>() ?? changeRoleButton.Component.gameObject.AddComponent<LayoutElement>(); leCR.preferredWidth = 180f; leCR.minHeight = 36f; } catch { }
             changeRoleButton.OnClick += () =>
             {
                 Plugin.Logger.LogInfo("Change Role clicked (todo)");
@@ -117,6 +119,7 @@ namespace BackInBusiness
             fireButton.ButtonText.fontSize = 14;
             fireButton.ButtonText.color = Color.white;
             SetupButton(fireButton, new Color(0.8f, 0.2f, 0.2f, 1f));
+            try { var leF = fireButton.Component.gameObject.GetComponent<LayoutElement>() ?? fireButton.Component.gameObject.AddComponent<LayoutElement>(); leF.preferredWidth = 140f; leF.minHeight = 36f; } catch { }
             fireButton.OnClick += () =>
             {
                 Plugin.Logger.LogInfo("Fire clicked (todo)");

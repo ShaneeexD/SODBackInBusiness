@@ -88,25 +88,6 @@ namespace BackInBusiness
                 le.ignoreLayout = true;
                 try { content.transform.SetAsLastSibling(); } catch { }
 
-                // Add a dedicated Canvas above the panel's content background to guarantee visibility
-                try
-                {
-                    var parentCanvas = ContentRoot.GetComponentInParent<Canvas>();
-                    var contentCanvas = content.GetComponent<Canvas>();
-                    if (contentCanvas == null) contentCanvas = content.AddComponent<Canvas>();
-                    contentCanvas.overrideSorting = true;
-                    int baseOrder = parentCanvas != null ? parentCanvas.sortingOrder : 5000;
-                    if (baseOrder < 0) baseOrder = 20000;
-                    int desired = baseOrder + 50;
-                    if (desired > 32760) desired = 32760;
-                    if (desired < -32760) desired = -32760;
-                    contentCanvas.sortingOrder = desired;
-                    if (content.GetComponent<UnityEngine.UI.GraphicRaycaster>() == null)
-                        content.AddComponent<UnityEngine.UI.GraphicRaycaster>();
-                    Plugin.Logger.LogInfo($"FloatingEmpPanel: content canvas order set to {contentCanvas.sortingOrder} (parent {baseOrder})");
-                }
-                catch { }
-
                 // Pull init args set before construction
                 Citizen citizenArg = null;
                 Occupation occArg = null;
