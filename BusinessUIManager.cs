@@ -1,4 +1,4 @@
-using System;
+            using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -188,7 +188,8 @@ namespace BackInBusiness
             MainMenu,
             PurchaseBusiness,
             OwnedBusinesses,
-            BusinessDetails
+            BusinessDetails,
+            EmployeeDetails
         }
         
         private PanelState currentState = PanelState.MainMenu;
@@ -197,6 +198,7 @@ namespace BackInBusiness
         private GameObject mainMenuContainer;
         private GameObject purchaseBusinessContainer;
         private GameObject ownedBusinessesContainer;
+        private GameObject employeeDetailsContainer;
         
         // Purchase business elements
         private List<BusinessInfo> availableBusinesses;
@@ -216,6 +218,13 @@ namespace BackInBusiness
         private Text businessDetailsTitle;
         private Text businessDetailsInfo;
         private OwnedBusinessData selectedOwnedBusiness;
+        private EmployeeDetailsView employeeDetailsView;
+        private Citizen selectedEmployeeCitizen;
+        private Occupation selectedEmployeeOccupation;
+        // Multi-window employee details support
+        private readonly List<GameObject> openEmployeeWindowContainers = new List<GameObject>();
+        private readonly System.Collections.Generic.Dictionary<GameObject, EmployeeDetailsView> employeeWindowViews = new System.Collections.Generic.Dictionary<GameObject, EmployeeDetailsView>();
+        private GameObject employeeWindowsOverlay; // overlay parent for floating windows (ignored by layout)
         
         // Required abstract properties
         public override string Name => "Business Management";
@@ -248,6 +257,7 @@ namespace BackInBusiness
                 purchaseBusinessContainer = UIFactory.CreateUIObject("PurchaseBusinessContainer", ContentRoot);
                 ownedBusinessesContainer = UIFactory.CreateUIObject("OwnedBusinessesContainer", ContentRoot);
                 businessDetailsContainer = UIFactory.CreateUIObject("BusinessDetailsContainer", ContentRoot);
+                employeeDetailsContainer = UIFactory.CreateUIObject("EmployeeDetailsContainer", ContentRoot);
                 
                 // Set up the main menu container
                 RectTransform mainMenuRect = mainMenuContainer.GetComponent<RectTransform>();
@@ -288,6 +298,37 @@ namespace BackInBusiness
                 LayoutElement detailsLayout = businessDetailsContainer.AddComponent<LayoutElement>();
                 detailsLayout.flexibleWidth = 1;
                 detailsLayout.flexibleHeight = 1;
+
+                // Set up the employee details container (separate panel)
+                RectTransform empDetailsRect = employeeDetailsContainer.GetComponent<RectTransform>();
+                empDetailsRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+                empDetailsRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.89f);
+                empDetailsRect.offsetMin = UnityEngine.Vector2.zero;
+                empDetailsRect.offsetMax = UnityEngine.Vector2.zero;
+                LayoutElement empDetailsLayout = employeeDetailsContainer.AddComponent<LayoutElement>();
+                empDetailsLayout.flexibleWidth = 1;
+                empDetailsLayout.flexibleHeight = 1;
+
+                // Create overlay for floating employee windows OUTSIDE the main panel, so it truly floats
+                GameObject uiRoot = null;
+                try { uiRoot = this.Owner != null ? this.Owner.RootObject : null; } catch { uiRoot = null; }
+                if (uiRoot == null) uiRoot = ContentRoot; // fallback
+                employeeWindowsOverlay = UIFactory.CreateUIObject("EmployeeWindowsOverlay", uiRoot);
+                RectTransform overlayRt = employeeWindowsOverlay.GetComponent<RectTransform>();
+                overlayRt.anchorMin = new UnityEngine.Vector2(0f, 0f);
+                overlayRt.anchorMax = new UnityEngine.Vector2(1f, 1f);
+                overlayRt.offsetMin = UnityEngine.Vector2.zero;
+                overlayRt.offsetMax = UnityEngine.Vector2.zero;
+                var overlayLe = employeeWindowsOverlay.AddComponent<LayoutElement>();
+                overlayLe.ignoreLayout = true;
+                var overlayCanvas = employeeWindowsOverlay.AddComponent<Canvas>();
+                overlayCanvas.overrideSorting = true;
+                // Sort above the entire UI root to avoid being clipped by the panel
+                overlayCanvas.sortingOrder = GetTopCanvasOrder(uiRoot) + 50;
+                if (employeeWindowsOverlay.GetComponent<UnityEngine.UI.GraphicRaycaster>() == null)
+                    employeeWindowsOverlay.AddComponent<UnityEngine.UI.GraphicRaycaster>();
+                try { employeeWindowsOverlay.transform.SetAsLastSibling(); } catch { }
+                employeeWindowsOverlay.SetActive(false);
                 
                 // Set up the main menu
                 SetupMainMenu();
@@ -300,6 +341,9 @@ namespace BackInBusiness
                 
                 // Set up the business details panel
                 SetupBusinessDetailsPanel();
+
+                // Set up the employee details panel
+                SetupEmployeeDetailsPanel();
                 
                 // Show the main menu initially
                 SwitchPanel(PanelState.MainMenu);
@@ -366,6 +410,20 @@ namespace BackInBusiness
             purchaseBusinessContainer.SetActive(false);
             ownedBusinessesContainer.SetActive(false);
             businessDetailsContainer.SetActive(false);
+            if (employeeDetailsContainer != null)
+                employeeDetailsContainer.SetActive(false);
+            // Manage visibility of any floating employee windows based on target state
+            try
+            {
+                bool showEmpWindows = (state == PanelState.BusinessDetails);
+                if (employeeWindowsOverlay != null) employeeWindowsOverlay.SetActive(showEmpWindows);
+                for (int i = 0; i < openEmployeeWindowContainers.Count; i++)
+                {
+                    var go = openEmployeeWindowContainers[i];
+                    if (go != null) go.SetActive(showEmpWindows);
+                }
+            }
+            catch { }
             
             // Show the appropriate container
             switch (state)
@@ -387,6 +445,38 @@ namespace BackInBusiness
                 case PanelState.BusinessDetails:
                     businessDetailsContainer.SetActive(true);
                     RefreshBusinessDetails();
+                    // Reset selected employee when returning to list
+                    selectedEmployeeCitizen = null;
+                    selectedEmployeeOccupation = null;
+                    if (employeeDetailsView != null)
+                    {
+                        try { employeeDetailsView.Hide(); } catch { }
+                    }
+                    break;
+                
+                case PanelState.EmployeeDetails:
+                    if (employeeDetailsContainer != null)
+                    {
+                        employeeDetailsContainer.SetActive(true);
+                        // bring to front in hierarchy
+                        try { employeeDetailsContainer.transform.SetAsLastSibling(); } catch { }
+                        try { Canvas.ForceUpdateCanvases(); } catch { }
+                    }
+                    // Auto-show last selected employee, if available
+                    if (employeeDetailsView != null && (selectedEmployeeCitizen != null || selectedEmployeeOccupation != null))
+                    {
+                        try
+                        {
+                            Plugin.Logger.LogInfo($"Showing employee details: {(selectedEmployeeCitizen != null ? selectedEmployeeCitizen.GetCitizenName() : "<null>")}");
+                            employeeDetailsView.Show(selectedEmployeeCitizen, selectedEmployeeOccupation);
+                            // Ensure the view's canvas is sorted above any siblings
+                            try { employeeDetailsView.BringToFront(); } catch { }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Plugin.Logger.LogError($"Error auto-showing employee details: {ex.Message}");
+                        }
+                    }
                     break;
             }
             
@@ -577,6 +667,7 @@ namespace BackInBusiness
             ownedCloseButton.OnClick += CloseBusinessUI;
             ownedCloseButton.ButtonText.fontSize = 14;
             SetupButton(ownedCloseButton, new Color(0.8f, 0.2f, 0.2f, 1f));
+            RefreshOwnedBusinessesList();
         }
         
         // Select an owned business and open details
@@ -631,13 +722,17 @@ namespace BackInBusiness
             infoRectHdr.offsetMin = UnityEngine.Vector2.zero;
             infoRectHdr.offsetMax = UnityEngine.Vector2.zero;
 
+            // (Employee details are now in their own panel.)
+
             // Employees list scroll view
             GameObject scrollObj = UIFactory.CreateScrollView(businessDetailsContainer, "EmployeeListScroll", out GameObject scrollContent, out _);
             RectTransform scrollRect = scrollObj.GetComponent<RectTransform>();
             scrollRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.25f);
+            // Full height up to info row since details view moved to its own panel
             scrollRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.76f);
             scrollRect.offsetMin = UnityEngine.Vector2.zero;
             scrollRect.offsetMax = UnityEngine.Vector2.zero;
+
 
             employeeListContainer = UIFactory.CreateVerticalGroup(scrollContent, "EmployeeListContainer", true, false, true, true, 5);
             employeeListContainer.GetComponent<RectTransform>().sizeDelta = new UnityEngine.Vector2(0, 0);
@@ -661,6 +756,110 @@ namespace BackInBusiness
             SetupButton(closeButton, new Color(0.8f, 0.2f, 0.2f, 1f));
         }
 
+        // Set up the separate employee details panel (modal-like)
+        private void SetupEmployeeDetailsPanel()
+        {
+            // Ensure container has its own canvas above others
+            var empCanvas = employeeDetailsContainer.GetComponent<Canvas>();
+            if (empCanvas == null) empCanvas = employeeDetailsContainer.AddComponent<Canvas>();
+            empCanvas.overrideSorting = true;
+            // Compute a safe sorting order above any sibling canvases to ensure visibility
+            int empDesired = 5000;
+            try
+            {
+                int maxOrder = empDesired;
+                var canvases = ContentRoot.GetComponentsInChildren<Canvas>(true);
+                if (canvases != null)
+                {
+                    for (int i = 0; i < canvases.Length; i++)
+                    {
+                        if (canvases[i] != null)
+                        {
+                            int ord = canvases[i].sortingOrder;
+                            if (ord > maxOrder) maxOrder = ord;
+                        }
+                    }
+                }
+                if (maxOrder < 0) maxOrder = 20000;
+                empDesired = maxOrder + 5;
+            }
+            catch { }
+            if (empDesired > 32760) empDesired = 32760;
+            if (empDesired < -32760) empDesired = -32760;
+            empCanvas.sortingOrder = empDesired;
+            try { Plugin.Logger.LogInfo($"EmpDetails Container canvas set to order={empCanvas.sortingOrder}"); } catch { }
+            if (employeeDetailsContainer.GetComponent<UnityEngine.UI.GraphicRaycaster>() == null)
+                employeeDetailsContainer.AddComponent<UnityEngine.UI.GraphicRaycaster>();
+            // Ensure container is visible and interactable
+            var empCg = employeeDetailsContainer.GetComponent<CanvasGroup>();
+            if (empCg == null) empCg = employeeDetailsContainer.AddComponent<CanvasGroup>();
+            empCg.alpha = 1f;
+            empCg.interactable = true;
+            empCg.blocksRaycasts = true;
+            // Add a subtle background to visually confirm rendering; do not block clicks outside
+            try
+            {
+                GameObject empBg = UIFactory.CreateUIObject("EmpPanelBG", employeeDetailsContainer);
+                var empBgImg = empBg.GetComponent<Image>();
+                if (empBgImg == null) empBgImg = empBg.AddComponent<Image>();
+                empBgImg.color = new Color(0f, 0f, 0f, 0.6f);
+                empBgImg.raycastTarget = false;
+                RectTransform empBgRt = empBg.GetComponent<RectTransform>();
+                empBgRt.anchorMin = new UnityEngine.Vector2(0f, 0f);
+                empBgRt.anchorMax = new UnityEngine.Vector2(1f, 1f);
+                empBgRt.offsetMin = UnityEngine.Vector2.zero;
+                empBgRt.offsetMax = UnityEngine.Vector2.zero;
+                empBg.transform.SetAsFirstSibling();
+            }
+            catch { }
+
+            // Title
+            Text title = UIFactory.CreateLabel(employeeDetailsContainer, "EmpDetailsTitle", "Employee Details", TextAnchor.MiddleCenter);
+            title.fontSize = 20;
+            title.fontStyle = FontStyle.Bold;
+            title.color = Color.white;
+            RectTransform titleRect = title.GetComponent<RectTransform>();
+            titleRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.9f);
+            titleRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.97f);
+            titleRect.offsetMin = UnityEngine.Vector2.zero;
+            titleRect.offsetMax = UnityEngine.Vector2.zero;
+
+            // Optional info line (can be used later for hints)
+            Text info = UIFactory.CreateLabel(employeeDetailsContainer, "EmpDetailsInfo", "", TextAnchor.MiddleCenter);
+            info.fontSize = 14;
+            info.color = new Color(0.9f, 0.9f, 0.9f, 1f);
+            RectTransform infoRect = info.GetComponent<RectTransform>();
+            infoRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.84f);
+            infoRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.89f);
+            infoRect.offsetMin = UnityEngine.Vector2.zero;
+            infoRect.offsetMax = UnityEngine.Vector2.zero;
+
+            // Build the details view in this container and expand for panel layout
+            employeeDetailsView = new EmployeeDetailsView();
+            employeeDetailsView.Build(employeeDetailsContainer);
+            employeeDetailsView.ConfigureAsPanelLayout();
+            // Make absolutely sure the details view renders above siblings in this container
+            try { employeeDetailsView.BringToFront(); } catch { }
+
+            // Bottom buttons
+            GameObject buttonRow = UIFactory.CreateHorizontalGroup(employeeDetailsContainer, "EmpDetailsButtons", true, false, true, true, 10);
+            RectTransform buttonRowRect = buttonRow.GetComponent<RectTransform>();
+            buttonRowRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+            buttonRowRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.12f);
+            buttonRowRect.offsetMin = UnityEngine.Vector2.zero;
+            buttonRowRect.offsetMax = UnityEngine.Vector2.zero;
+
+            ButtonRef backBtn = UIFactory.CreateButton(buttonRow, "EmpBackButton", "Back to Business Details");
+            backBtn.OnClick += () => SwitchPanel(PanelState.BusinessDetails);
+            backBtn.ButtonText.fontSize = 14;
+            SetupButton(backBtn, new Color(0.6f, 0.6f, 0.6f, 1f));
+
+            ButtonRef closeBtn = UIFactory.CreateButton(buttonRow, "EmpCloseButton", "Close");
+            closeBtn.OnClick += CloseBusinessUI;
+            closeBtn.ButtonText.fontSize = 14;
+            SetupButton(closeBtn, new Color(0.8f, 0.2f, 0.2f, 1f));
+        }
+
         // Populate the business details and employee list
         private void RefreshBusinessDetails()
         {
@@ -676,6 +875,12 @@ namespace BackInBusiness
                 string formattedDate = GetPurchaseDate(selectedOwnedBusiness.PurchaseDate);
                 businessDetailsTitle.text = selectedOwnedBusiness.BusinessName ?? "Unknown Business";
                 businessDetailsInfo.text = $"Type: {selectedOwnedBusiness.Type} | Income: {selectedOwnedBusiness.DailyIncome} Crows/day | Employees: {selectedOwnedBusiness.EmployeeCount} | Floor: {selectedOwnedBusiness.FloorName} | Purchased: {formattedDate}";
+
+                // Hide details until a row is clicked
+                if (employeeDetailsView != null)
+                {
+                    employeeDetailsView.Hide();
+                }
 
                 // Clear existing rows
                 if (employeeListContainer != null && employeeListContainer.transform != null)
@@ -775,6 +980,39 @@ namespace BackInBusiness
                         rowRect.anchorMax = new UnityEngine.Vector2(0.95f, 1f);
                         rowRect.offsetMin = UnityEngine.Vector2.zero;
                         rowRect.offsetMax = UnityEngine.Vector2.zero;
+
+                        // Clickable overlay to open the details view
+                        try
+                        {
+                            var occLocal = occ;
+                            Citizen citizenLocal = null;
+                            try { citizenLocal = occLocal != null ? occLocal.employee as Citizen : null; } catch { }
+
+                            ButtonRef rowBtn = UIFactory.CreateButton(row, $"EmployeeRowBtn_{i}", "");
+                            // Clear text and make the button background invisible but still clickable
+                            if (rowBtn.ButtonText != null)
+                                rowBtn.ButtonText.text = string.Empty;
+                            var btnImg = rowBtn.Component.GetComponent<Image>();
+                            if (btnImg != null)
+                                btnImg.color = new Color(0f, 0f, 0f, 0.001f);
+                            var btnRt = rowBtn.Component.GetComponent<RectTransform>();
+                            btnRt.anchorMin = new UnityEngine.Vector2(0f, 0f);
+                            btnRt.anchorMax = new UnityEngine.Vector2(1f, 1f);
+                            btnRt.offsetMin = UnityEngine.Vector2.zero;
+                            btnRt.offsetMax = UnityEngine.Vector2.zero;
+                            rowBtn.OnClick += () =>
+                            {
+                                try
+                                {
+                                    CreateEmployeeWindow(citizenLocal, occLocal);
+                                }
+                                catch (System.Exception ex)
+                                {
+                                    Plugin.Logger.LogError($"Error opening employee window: {ex.Message}");
+                                }
+                            };
+                        }
+                        catch { }
                     }
                 }
                 else
@@ -1368,6 +1606,8 @@ namespace BackInBusiness
 
         private void CloseBusinessUI()
         {
+            // Close any floating employee windows first
+            try { CloseAllEmployeeWindows(); } catch { }
             SetActive(false);
             Player.Instance.EnableCharacterController(true);
             Player.Instance.EnablePlayerMouseLook(true, true);
@@ -1376,6 +1616,145 @@ namespace BackInBusiness
             sessionData.ResumeGame();
             Cursor.lockState = CursorLockMode.Locked;
 
+        }
+
+        // Create a floating employee detail window on the right side
+        private void CreateEmployeeWindow(Citizen citizen, Occupation occ)
+        {
+            if (ContentRoot == null) return;
+            // Ensure the overlay is visible when opening a window
+            try { if (employeeWindowsOverlay != null && !employeeWindowsOverlay.activeSelf) employeeWindowsOverlay.SetActive(true); } catch { }
+            string name = citizen != null ? citizen.GetCitizenName() : (occ != null && occ.employee != null ? occ.employee.name?.ToString() : "Employee");
+            string goName = $"EmpWindow_{openEmployeeWindowContainers.Count + 1}_{name}";
+            // Parent to overlay so layout groups on ContentRoot can't affect it
+            GameObject parentForWindows = employeeWindowsOverlay != null ? employeeWindowsOverlay : ContentRoot;
+            GameObject win = UIFactory.CreateUIObject(goName, parentForWindows);
+            RectTransform rt = win.GetComponent<RectTransform>();
+            // Ensure this window is ignored by any parent layout system
+            var winLe = win.GetComponent<LayoutElement>();
+            if (winLe == null) winLe = win.AddComponent<LayoutElement>();
+            winLe.ignoreLayout = true;
+            rt.pivot = new UnityEngine.Vector2(0.5f, 0.5f);
+            // Cascade windows vertically on the right side
+            int idx = openEmployeeWindowContainers.Count;
+            float topStart = 0.95f - (idx * 0.38f);
+            float bottom = topStart - 0.35f;
+            if (bottom < 0.06f) { bottom = 0.06f; topStart = bottom + 0.35f; }
+            rt.anchorMin = new UnityEngine.Vector2(0.60f, bottom);
+            rt.anchorMax = new UnityEngine.Vector2(0.98f, topStart);
+            rt.offsetMin = UnityEngine.Vector2.zero;
+            rt.offsetMax = UnityEngine.Vector2.zero;
+            try { win.transform.SetAsLastSibling(); } catch { }
+
+            // Canvas and sorting
+            var canvas = win.GetComponent<Canvas>();
+            if (canvas == null) canvas = win.AddComponent<Canvas>();
+            canvas.overrideSorting = true;
+            int overlayBase = employeeWindowsOverlay != null ? GetTopCanvasOrder(employeeWindowsOverlay) : GetTopCanvasOrder(ContentRoot);
+            int baseOrder = overlayBase + 10 + (idx * 2);
+            if (baseOrder > 32760) baseOrder = 32760;
+            if (baseOrder < -32760) baseOrder = -32760;
+            canvas.sortingOrder = baseOrder;
+            if (win.GetComponent<GraphicRaycaster>() == null) win.AddComponent<GraphicRaycaster>();
+            var cg = win.GetComponent<CanvasGroup>();
+            if (cg == null) cg = win.AddComponent<CanvasGroup>();
+            cg.alpha = 1f; cg.interactable = true; cg.blocksRaycasts = true;
+
+            // Background
+            Image bg = win.GetComponent<Image>();
+            if (bg == null) bg = win.AddComponent<Image>();
+            bg.color = new Color(0.10f, 0.10f, 0.10f, 0.95f);
+            bg.raycastTarget = true;
+
+            // Title bar
+            Text title = UIFactory.CreateLabel(win, $"EmpWinTitle_{idx}", $"{name} Details", TextAnchor.MiddleLeft);
+            title.fontSize = 16; title.fontStyle = FontStyle.Bold; title.color = Color.white;
+            RectTransform titleRt = title.GetComponent<RectTransform>();
+            titleRt.anchorMin = new UnityEngine.Vector2(0.03f, 0.92f);
+            titleRt.anchorMax = new UnityEngine.Vector2(0.85f, 0.98f);
+            titleRt.offsetMin = UnityEngine.Vector2.zero; titleRt.offsetMax = UnityEngine.Vector2.zero;
+
+            // Close button
+            ButtonRef closeBtn = UIFactory.CreateButton(win, $"EmpWinClose_{idx}", "Close");
+            closeBtn.ButtonText.fontSize = 12;
+            RectTransform closeRt = closeBtn.Component.GetComponent<RectTransform>();
+            closeRt.anchorMin = new UnityEngine.Vector2(0.86f, 0.92f);
+            closeRt.anchorMax = new UnityEngine.Vector2(0.97f, 0.98f);
+            closeRt.offsetMin = UnityEngine.Vector2.zero; closeRt.offsetMax = UnityEngine.Vector2.zero;
+            SetupButton(closeBtn, new Color(0.7f, 0.2f, 0.2f, 1f));
+            closeBtn.OnClick += () => { try { CloseEmployeeWindow(win); } catch { } };
+
+            // Details view root (fills window below title bar)
+            GameObject content = UIFactory.CreateUIObject($"EmpWinContent_{idx}", win);
+            RectTransform contentRt = content.GetComponent<RectTransform>();
+            contentRt.anchorMin = new UnityEngine.Vector2(0.02f, 0.04f);
+            contentRt.anchorMax = new UnityEngine.Vector2(0.98f, 0.90f);
+            contentRt.offsetMin = UnityEngine.Vector2.zero; contentRt.offsetMax = UnityEngine.Vector2.zero;
+            var contentLe = content.GetComponent<LayoutElement>();
+            if (contentLe == null) contentLe = content.AddComponent<LayoutElement>();
+            contentLe.ignoreLayout = true;
+
+            // Build and show details view inside the window
+            var view = new EmployeeDetailsView();
+            view.Build(content); // Fill parent; no ConfigureAsPanelLayout in floating window
+            view.Show(citizen, occ);
+            try { view.BringToFront(); } catch { }
+
+            // Track window and view
+            openEmployeeWindowContainers.Add(win);
+            if (!employeeWindowViews.ContainsKey(win)) employeeWindowViews.Add(win, view);
+
+            // Ensure visible
+            win.SetActive(true);
+            try { Canvas.ForceUpdateCanvases(); } catch { }
+        }
+
+        private int GetTopCanvasOrder(GameObject root)
+        {
+            int maxOrder = 0;
+            try
+            {
+                var canvases = root.GetComponentsInChildren<Canvas>(true);
+                if (canvases != null)
+                {
+                    for (int i = 0; i < canvases.Length; i++)
+                    {
+                        if (canvases[i] != null && canvases[i].sortingOrder > maxOrder)
+                            maxOrder = canvases[i].sortingOrder;
+                    }
+                }
+            }
+            catch { }
+            if (maxOrder < 0) maxOrder = 20000;
+            return maxOrder;
+        }
+
+        private void CloseEmployeeWindow(GameObject win)
+        {
+            if (win == null) return;
+            try
+            {
+                if (employeeWindowViews.ContainsKey(win))
+                {
+                    var view = employeeWindowViews[win];
+                    try { if (view != null) view.Hide(); } catch { }
+                    employeeWindowViews.Remove(win);
+                }
+                openEmployeeWindowContainers.Remove(win);
+                UnityEngine.Object.Destroy(win);
+            }
+            catch { }
+        }
+
+        private void CloseAllEmployeeWindows()
+        {
+            for (int i = openEmployeeWindowContainers.Count - 1; i >= 0; i--)
+            {
+                var go = openEmployeeWindowContainers[i];
+                try { CloseEmployeeWindow(go); } catch { }
+            }
+            openEmployeeWindowContainers.Clear();
+            employeeWindowViews.Clear();
         }
         
         private void SelectBusiness(int index)
