@@ -13,4 +13,4 @@ TODO:
 - [ ] Thoroughly test save/load functionality across different scenarios (new game, load game, multiple saves, data integrity after reloads).
 
 Other minor features/fixes:
-- [ ] Industrial Businesses need to include lobby
+- [x] Industrial Businesses need to include lobby

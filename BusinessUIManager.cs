@@ -103,80 +103,6 @@ namespace BackInBusiness
                     // If panel doesn't exist yet, create it
                     CreateBusinessUI();
                 }
-
-                if(!businessPanel.Enabled)
-                {
-                    uiEnabled = false;
-                    try
-                    {
-                        
-                        
-                        // Force any UniverseLib panel resizing to end
-                        UniverseLib.UI.Panels.PanelManager.ForceEndResize();
-                        
-                        // Make sure the panel is fully closed
-                        if (businessPanel != null)
-                        {
-                            businessPanel.SetActive(false);
-                        }
-                        
-                        // Reset the event system
-                        if (UnityEngine.EventSystems.EventSystem.current != null)
-                        {
-                            // First clear selection
-                            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
-                            
-                            // Then set focus back to game canvas if it exists
-                            var gameCanvas = UnityEngine.GameObject.Find("GameCanvas");
-                            if (gameCanvas != null)
-                            {
-                                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(gameCanvas);
-                            }
-                        }
-                        
-                        // Reset input through UniverseLib's InputManager instead
-                        UniverseLib.Input.InputManager.ResetInputAxes();
-                        // Re-enable game controls in the correct order
-                        InputController.Instance.enabled = true;
-                        Player.Instance.EnableCharacterController(true);
-                        Player.Instance.EnablePlayerMouseLook(true, true);
-                        
-                        // Resume the game
-                        SessionData sessionData = SessionData.Instance;
-                        sessionData.ResumeGame();
-                        
-                        // Lock cursor for game control
-                        Cursor.lockState = CursorLockMode.Locked;
-                        Cursor.visible = false;
-                        
-                        // Log the input state
-                        Plugin.Logger.LogInfo("Game input restored, UI closed");
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Plugin.Logger.LogError($"Failed to update input control: {ex.Message}");
-                    }
-                }
-                else
-                {
-                    uiEnabled = true;
-                    
-                    // Disable game controls
-                    Player.Instance.EnablePlayerMouseLook(false, false);
-                    Player.Instance.EnableCharacterController(false);
-                    InputController.Instance.enabled = false;
-                    
-                    // Pause the game
-                    SessionData sessionData = SessionData.Instance;
-                    sessionData.PauseGame(false, false, true);
-                    
-                    // Show cursor for UI interaction
-                    Cursor.lockState = CursorLockMode.None;
-                    Cursor.visible = true;
-                    
-                    // Log the input state
-                    Plugin.Logger.LogInfo("Game input disabled, UniverseLib input blocking enabled");
-                }
             }
             catch (System.Exception ex)
             {
@@ -193,7 +119,8 @@ namespace BackInBusiness
         {
             MainMenu,
             PurchaseBusiness,
-            OwnedBusinesses
+            OwnedBusinesses,
+            BusinessDetails
         }
         
         private PanelState currentState = PanelState.MainMenu;
@@ -215,6 +142,12 @@ namespace BackInBusiness
         // Owned businesses elements
         public static List<OwnedBusinessData> ownedBusinesses;
         private GameObject ownedBusinessListContainer;
+        // Business details elements
+        private GameObject businessDetailsContainer;
+        private GameObject employeeListContainer;
+        private Text businessDetailsTitle;
+        private Text businessDetailsInfo;
+        private OwnedBusinessData selectedOwnedBusiness;
         
         // Required abstract properties
         public override string Name => "Business Management";
@@ -246,6 +179,7 @@ namespace BackInBusiness
                 mainMenuContainer = UIFactory.CreateUIObject("MainMenuContainer", ContentRoot);
                 purchaseBusinessContainer = UIFactory.CreateUIObject("PurchaseBusinessContainer", ContentRoot);
                 ownedBusinessesContainer = UIFactory.CreateUIObject("OwnedBusinessesContainer", ContentRoot);
+                businessDetailsContainer = UIFactory.CreateUIObject("BusinessDetailsContainer", ContentRoot);
                 
                 // Set up the main menu container
                 RectTransform mainMenuRect = mainMenuContainer.GetComponent<RectTransform>();
@@ -276,6 +210,16 @@ namespace BackInBusiness
                 LayoutElement ownedLayout = ownedBusinessesContainer.AddComponent<LayoutElement>();
                 ownedLayout.flexibleWidth = 1;
                 ownedLayout.flexibleHeight = 1;
+
+                // Set up the business details container
+                RectTransform detailsRect = businessDetailsContainer.GetComponent<RectTransform>();
+                detailsRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+                detailsRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.89f);
+                detailsRect.offsetMin = UnityEngine.Vector2.zero;
+                detailsRect.offsetMax = UnityEngine.Vector2.zero;
+                LayoutElement detailsLayout = businessDetailsContainer.AddComponent<LayoutElement>();
+                detailsLayout.flexibleWidth = 1;
+                detailsLayout.flexibleHeight = 1;
                 
                 // Set up the main menu
                 SetupMainMenu();
@@ -285,6 +229,9 @@ namespace BackInBusiness
                 
                 // Set up the owned businesses panel
                 SetupOwnedBusinessesPanel();
+                
+                // Set up the business details panel
+                SetupBusinessDetailsPanel();
                 
                 // Show the main menu initially
                 SwitchPanel(PanelState.MainMenu);
@@ -350,6 +297,7 @@ namespace BackInBusiness
             mainMenuContainer.SetActive(false);
             purchaseBusinessContainer.SetActive(false);
             ownedBusinessesContainer.SetActive(false);
+            businessDetailsContainer.SetActive(false);
             
             // Show the appropriate container
             switch (state)
@@ -366,6 +314,11 @@ namespace BackInBusiness
                 case PanelState.OwnedBusinesses:
                     ownedBusinessesContainer.SetActive(true);
                     RefreshOwnedBusinessesList();
+                    break;
+                
+                case PanelState.BusinessDetails:
+                    businessDetailsContainer.SetActive(true);
+                    RefreshBusinessDetails();
                     break;
             }
             
@@ -558,6 +511,232 @@ namespace BackInBusiness
             SetupButton(ownedCloseButton, new Color(0.8f, 0.2f, 0.2f, 1f));
         }
         
+        // Select an owned business and open details
+        private void SelectOwnedBusiness(int index)
+        {
+            try
+            {
+                if (ownedBusinesses == null || index < 0 || index >= ownedBusinesses.Count)
+                    return;
+
+                selectedOwnedBusiness = ownedBusinesses[index];
+                Plugin.Logger.LogInfo($"Selected owned business: {selectedOwnedBusiness.BusinessName} (ID: {selectedOwnedBusiness.AddressId})");
+                SwitchPanel(PanelState.BusinessDetails);
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error selecting owned business: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        // Set up the business details panel UI
+        private void SetupBusinessDetailsPanel()
+        {
+            // Title
+            Text title = UIFactory.CreateLabel(businessDetailsContainer, "DetailsTitle", "Business Details", TextAnchor.MiddleCenter);
+            title.fontSize = 20;
+            title.fontStyle = FontStyle.Bold;
+            title.color = Color.white;
+            RectTransform titleRect = title.GetComponent<RectTransform>();
+            titleRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.9f);
+            titleRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.97f);
+            titleRect.offsetMin = UnityEngine.Vector2.zero;
+            titleRect.offsetMax = UnityEngine.Vector2.zero;
+
+            // Business name
+            businessDetailsTitle = UIFactory.CreateLabel(businessDetailsContainer, "DetailsBusinessName", "", TextAnchor.MiddleCenter);
+            businessDetailsTitle.fontSize = 18;
+            businessDetailsTitle.color = Color.white;
+            RectTransform nameRect = businessDetailsTitle.GetComponent<RectTransform>();
+            nameRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.83f);
+            nameRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.89f);
+            nameRect.offsetMin = UnityEngine.Vector2.zero;
+            nameRect.offsetMax = UnityEngine.Vector2.zero;
+
+            // Info line
+            businessDetailsInfo = UIFactory.CreateLabel(businessDetailsContainer, "DetailsInfo", "", TextAnchor.MiddleCenter);
+            businessDetailsInfo.fontSize = 14;
+            businessDetailsInfo.color = new Color(0.9f, 0.9f, 0.9f, 1f);
+            RectTransform infoRectHdr = businessDetailsInfo.GetComponent<RectTransform>();
+            infoRectHdr.anchorMin = new UnityEngine.Vector2(0.05f, 0.78f);
+            infoRectHdr.anchorMax = new UnityEngine.Vector2(0.95f, 0.83f);
+            infoRectHdr.offsetMin = UnityEngine.Vector2.zero;
+            infoRectHdr.offsetMax = UnityEngine.Vector2.zero;
+
+            // Employees list scroll view
+            GameObject scrollObj = UIFactory.CreateScrollView(businessDetailsContainer, "EmployeeListScroll", out GameObject scrollContent, out _);
+            RectTransform scrollRect = scrollObj.GetComponent<RectTransform>();
+            scrollRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.25f);
+            scrollRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.76f);
+            scrollRect.offsetMin = UnityEngine.Vector2.zero;
+            scrollRect.offsetMax = UnityEngine.Vector2.zero;
+
+            employeeListContainer = UIFactory.CreateVerticalGroup(scrollContent, "EmployeeListContainer", true, false, true, true, 5);
+            employeeListContainer.GetComponent<RectTransform>().sizeDelta = new UnityEngine.Vector2(0, 0);
+
+            // Bottom buttons
+            GameObject buttonContainer = UIFactory.CreateHorizontalGroup(businessDetailsContainer, "DetailsButtonContainer", true, false, true, true, 10);
+            RectTransform buttonContainerRect = buttonContainer.GetComponent<RectTransform>();
+            buttonContainerRect.anchorMin = new UnityEngine.Vector2(0.05f, 0.05f);
+            buttonContainerRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.2f);
+            buttonContainerRect.offsetMin = UnityEngine.Vector2.zero;
+            buttonContainerRect.offsetMax = UnityEngine.Vector2.zero;
+
+            ButtonRef backButton = UIFactory.CreateButton(buttonContainer, "DetailsBackButton", "Back to Owned Businesses");
+            backButton.OnClick += () => SwitchPanel(PanelState.OwnedBusinesses);
+            backButton.ButtonText.fontSize = 14;
+            SetupButton(backButton, new Color(0.6f, 0.6f, 0.6f, 1f));
+
+            ButtonRef closeButton = UIFactory.CreateButton(buttonContainer, "DetailsCloseButton", "Close");
+            closeButton.OnClick += CloseBusinessUI;
+            closeButton.ButtonText.fontSize = 14;
+            SetupButton(closeButton, new Color(0.8f, 0.2f, 0.2f, 1f));
+        }
+
+        // Populate the business details and employee list
+        private void RefreshBusinessDetails()
+        {
+            try
+            {
+                if (selectedOwnedBusiness == null)
+                {
+                    Plugin.Logger.LogWarning("No owned business selected for details view");
+                    return;
+                }
+
+                // Update headers
+                string formattedDate = GetPurchaseDate(selectedOwnedBusiness.PurchaseDate);
+                businessDetailsTitle.text = selectedOwnedBusiness.BusinessName ?? "Unknown Business";
+                businessDetailsInfo.text = $"Type: {selectedOwnedBusiness.Type} | Income: {selectedOwnedBusiness.DailyIncome} Crows/day | Employees: {selectedOwnedBusiness.EmployeeCount} | Floor: {selectedOwnedBusiness.FloorName} | Purchased: {formattedDate}";
+
+                // Clear existing rows
+                if (employeeListContainer != null && employeeListContainer.transform != null)
+                {
+                    int childCount = employeeListContainer.transform.childCount;
+                    for (int i = childCount - 1; i >= 0; i--)
+                    {
+                        Transform child = employeeListContainer.transform.GetChild(i);
+                        if (child != null && child.gameObject != null)
+                        {
+                            UnityEngine.Object.Destroy(child.gameObject);
+                        }
+                    }
+                }
+
+                // Try to resolve the apartment/company roster from the game
+                NewAddress apartment = FindApartmentById(selectedOwnedBusiness.AddressId);
+                if (apartment != null && apartment.company != null && apartment.company.companyRoster != null && apartment.company.companyRoster.Count > 0)
+                {
+                    // Build a row for each occupation/employee
+                    for (int i = 0; i < apartment.company.companyRoster.Count; i++)
+                    {
+                        Occupation occ = apartment.company.companyRoster[i];
+                        string empName = "Vacant";
+                        try
+                        {
+                            if (occ != null && occ.employee != null)
+                            {
+                                Citizen citizen = occ.employee as Citizen;
+                                if (citizen != null)
+                                {
+                                    empName = citizen.GetCitizenName();
+                                }
+                                else
+                                {
+                                    empName = occ.employee.name?.ToString() ?? "Employee";
+                                }
+                            }
+                        }
+                        catch { }
+
+                        string role = "Worker";
+                        try
+                        {
+                            if (occ != null)
+                            {
+                                if (!string.IsNullOrEmpty(occ.name)) role = occ.name;
+                                else if (occ.preset != null && !string.IsNullOrEmpty(occ.preset.name)) role = occ.preset.name;
+                            }
+                        }
+                        catch { }
+
+                        GameObject row = UIFactory.CreateUIObject($"Employee_{i}", employeeListContainer);
+                        row.AddComponent<LayoutElement>().preferredHeight = 40;
+                        row.AddComponent<Image>().color = new Color(0.18f, 0.18f, 0.18f, 0.85f);
+
+                        Text rowText = UIFactory.CreateLabel(row, $"EmployeeText_{i}", $"{i + 1}. {empName} - {role}", TextAnchor.MiddleLeft);
+                        rowText.fontSize = 14;
+                        rowText.color = Color.white;
+                        RectTransform rowRect = rowText.GetComponent<RectTransform>();
+                        rowRect.anchorMin = new UnityEngine.Vector2(0.05f, 0f);
+                        rowRect.anchorMax = new UnityEngine.Vector2(0.95f, 1f);
+                        rowRect.offsetMin = UnityEngine.Vector2.zero;
+                        rowRect.offsetMax = UnityEngine.Vector2.zero;
+                    }
+                }
+                else
+                {
+                    // Fallback to any cached employees from extensions, or show a message
+                    var fallbackEmployees = selectedOwnedBusiness.GetEmployees();
+                    if (fallbackEmployees != null && fallbackEmployees.Count > 0)
+                    {
+                        for (int i = 0; i < fallbackEmployees.Count; i++)
+                        {
+                            var emp = fallbackEmployees[i];
+                            GameObject row = UIFactory.CreateUIObject($"Employee_{i}", employeeListContainer);
+                            row.AddComponent<LayoutElement>().preferredHeight = 40;
+                            row.AddComponent<Image>().color = new Color(0.18f, 0.18f, 0.18f, 0.85f);
+
+                            Text rowText = UIFactory.CreateLabel(row, $"EmployeeText_{i}", $"{i + 1}. {emp.Name} - {emp.Role}", TextAnchor.MiddleLeft);
+                            rowText.fontSize = 14;
+                            rowText.color = Color.white;
+                            RectTransform rowRect = rowText.GetComponent<RectTransform>();
+                            rowRect.anchorMin = new UnityEngine.Vector2(0.05f, 0f);
+                            rowRect.anchorMax = new UnityEngine.Vector2(0.95f, 1f);
+                            rowRect.offsetMin = UnityEngine.Vector2.zero;
+                            rowRect.offsetMax = UnityEngine.Vector2.zero;
+                        }
+                    }
+                    else
+                    {
+                        Text none = UIFactory.CreateLabel(employeeListContainer, "NoEmployeesText", "No employees found for this business.", TextAnchor.MiddleCenter);
+                        none.fontSize = 16;
+                        none.color = Color.yellow;
+                        LayoutElement textLayout = none.gameObject.AddComponent<LayoutElement>();
+                        textLayout.minHeight = 40;
+                        textLayout.preferredHeight = 40;
+                        textLayout.flexibleHeight = 0;
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error refreshing business details: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private NewAddress FindApartmentById(int id)
+        {
+            try
+            {
+                if (Player.Instance == null || Player.Instance.apartmentsOwned == null)
+                    return null;
+
+                for (int i = 0; i < Player.Instance.apartmentsOwned.Count; i++)
+                {
+                    var apt = Player.Instance.apartmentsOwned[i];
+                    if (apt != null && apt.id == id)
+                        return apt;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"Error finding apartment by ID {id}: {ex.Message}");
+            }
+            return null;
+        }
+        
+        
         // Method to refresh the owned businesses list
         private void RefreshOwnedBusinessesList()
         {
@@ -654,6 +833,17 @@ namespace BackInBusiness
                         infoRect.anchorMax = new UnityEngine.Vector2(0.95f, 0.5f);
                         infoRect.offsetMin = UnityEngine.Vector2.zero;
                         infoRect.offsetMax = UnityEngine.Vector2.zero;
+
+                        // Make the entire row clickable to view details
+                        int capturedIndex = i;
+                        Button rowButton = businessPanel.AddComponent<Button>();
+                        ColorBlock rowColors = rowButton.colors;
+                        rowColors.normalColor = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+                        rowColors.highlightedColor = new Color(0.25f, 0.25f, 0.25f, 0.9f);
+                        rowColors.pressedColor = new Color(0.15f, 0.15f, 0.15f, 0.9f);
+                        rowColors.disabledColor = new Color(0.3f, 0.3f, 0.3f, 0.5f);
+                        rowButton.colors = rowColors;
+                        rowButton.onClick.AddListener(() => SelectOwnedBusiness(capturedIndex));
                     }
                 }
                 
@@ -1492,6 +1682,7 @@ namespace BackInBusiness
                     
                     // Find an appropriate preset for office work from loaded resources
                     OccupationPreset officePreset = null;
+                    OccupationPresets presetsMap = new OccupationPresets();
                     foreach (OccupationPreset preset in Resources.FindObjectsOfTypeAll<OccupationPreset>())
                     {
                         if (preset.work == OccupationPreset.workType.Office)
@@ -1499,11 +1690,17 @@ namespace BackInBusiness
                             officePreset = preset;
                             break;
                         }
-                        if(preset.presetName == OccupationPresets.OccupationPresetsMapping[i].Item1)
+                        // Also allow match by known preset name mapping
+                        for (int m = 0; m < presetsMap.OccupationPresetsMapping.Length; m++)
                         {
-                            officePreset = preset;
-                            break;
+                            if (preset.presetName == presetsMap.OccupationPresetsMapping[m].Item1)
+                            {
+                                officePreset = preset;
+                                break;
+                            }
                         }
+                        if (officePreset != null)
+                            break;
                     }
                     
                     if (officePreset == null)
