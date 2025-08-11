@@ -732,11 +732,42 @@ namespace BackInBusiness
                         row.AddComponent<LayoutElement>().preferredHeight = 40;
                         row.AddComponent<Image>().color = new Color(0.18f, 0.18f, 0.18f, 0.85f);
 
+                        // Add employee photo on the left, if available
+                        try
+                        {
+                            GameObject photoGO = UIFactory.CreateUIObject($"EmployeePhoto_{i}", row);
+                            RawImage photoImg = photoGO.AddComponent<RawImage>();
+                            RectTransform photoRect = photoGO.GetComponent<RectTransform>();
+                            // Reserve ~12% width for photo with some vertical padding
+                            photoRect.anchorMin = new UnityEngine.Vector2(0.01f, 0.1f);
+                            photoRect.anchorMax = new UnityEngine.Vector2(0.12f, 0.9f);
+                            photoRect.offsetMin = UnityEngine.Vector2.zero;
+                            photoRect.offsetMax = UnityEngine.Vector2.zero;
+
+                            // Try to fetch the citizen's evidence photo texture
+                            Citizen citizenForPhoto = null;
+                            try { citizenForPhoto = occ != null ? occ.employee as Citizen : null; } catch { }
+                            if (citizenForPhoto != null && citizenForPhoto.evidenceEntry != null)
+                            {
+                                // Build IL2CPP List<Evidence.DataKey> for GetPhoto
+                                var photoKeys = new Il2CppSystem.Collections.Generic.List<Evidence.DataKey>();
+                                photoKeys.Add(Evidence.DataKey.photo);
+                                Texture2D tex = citizenForPhoto.evidenceEntry.GetPhoto(photoKeys);
+                                if (tex != null)
+                                {
+                                    photoImg.texture = tex;
+                                    photoImg.color = Color.white;
+                                }
+                            }
+                        }
+                        catch { }
+
                         Text rowText = UIFactory.CreateLabel(row, $"EmployeeText_{i}", $"{i + 1}. {empName} - {role}", TextAnchor.MiddleLeft);
                         rowText.fontSize = 14;
                         rowText.color = Color.white;
                         RectTransform rowRect = rowText.GetComponent<RectTransform>();
-                        rowRect.anchorMin = new UnityEngine.Vector2(0.05f, 0f);
+                        // Shift text right to leave space for the photo
+                        rowRect.anchorMin = new UnityEngine.Vector2(0.14f, 0f);
                         rowRect.anchorMax = new UnityEngine.Vector2(0.95f, 1f);
                         rowRect.offsetMin = UnityEngine.Vector2.zero;
                         rowRect.offsetMax = UnityEngine.Vector2.zero;
