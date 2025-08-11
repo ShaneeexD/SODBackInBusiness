@@ -5,6 +5,7 @@ using UniverseLib;
 using UniverseLib.UI;
 using UniverseLib.UI.Models;
 using SOD.Common;
+using Il2CppInterop.Runtime;
 
 namespace BackInBusiness
 {
@@ -143,13 +144,13 @@ namespace BackInBusiness
             btn.Component.colors = colors;
         }
 
-        public void Show(Citizen citizen, Occupation occ)
+        public void Show(Citizen citizen, Occupation occ, int addressId = -1, int rosterIndex = -1)
         {
             try
             {
                 string empObjInfo = "<none>";
                 try { if (occ != null && occ.employee != null) empObjInfo = occ.employee.ToString(); } catch { }
-                Plugin.Logger.LogInfo($"EmployeeDetailsView.Show citizen={(citizen != null ? citizen.GetCitizenName() : "<null>")}, occ={(occ != null ? (string.IsNullOrEmpty(occ.name) ? (occ.preset != null ? occ.preset.name : "<no preset>") : occ.name) : "<null>")}, empObj={empObjInfo}");
+                Plugin.Logger.LogInfo($"EmployeeDetailsView.Show citizen={(citizen != null ? citizen.GetCitizenName() : "<null>")}, occ={(occ != null ? (string.IsNullOrEmpty(occ.name) ? (occ.preset != null ? occ.preset.name : "<no preset>") : occ.name) : "<null>")}, empObj={empObjInfo}, addrId={addressId}, rosterIdx={rosterIndex}");
                 if (root == null) return;
                 root.SetActive(true);
                 // Ensure alpha and interaction are enabled
@@ -169,8 +170,10 @@ namespace BackInBusiness
                     try { citizen = occ.employee as Citizen; } catch { }
                 }
 
-                // Portrait
+                // Portrait: start with a placeholder tint; try to fetch immediately, then retry if needed
+                try { var old = portrait.gameObject.GetComponent(Il2CppType.Of<PortraitRetryLoader>()) as PortraitRetryLoader; if (old != null) UnityEngine.Object.Destroy(old); } catch { }
                 portrait.texture = null;
+                portrait.color = new Color(0.25f, 0.25f, 0.25f, 1f);
                 if (citizen != null && citizen.evidenceEntry != null)
                 {
                     var keys = new Il2CppSystem.Collections.Generic.List<Evidence.DataKey>();
@@ -182,6 +185,27 @@ namespace BackInBusiness
                         portrait.color = Color.white;
                     }
                 }
+                // If we still don't have a texture, spin up a lightweight retry loader (IL2CPP-safe)
+                try
+                {
+                    if (portrait.texture == null && (citizen != null || (addressId >= 0 && rosterIndex >= 0)))
+                    {
+                        var t = Il2CppType.Of<PortraitRetryLoader>();
+                        var go = portrait.gameObject;
+                        var comp = go.GetComponent(t) as PortraitRetryLoader;
+                        if (comp == null) comp = go.AddComponent(t) as PortraitRetryLoader;
+                        if (comp != null)
+                        {
+                            comp.target = portrait;
+                            comp.citizen = citizen;
+                            comp.addressId = addressId;
+                            comp.rosterIndex = rosterIndex;
+                            comp.interval = 0.25f;
+                            comp.timeLeft = 2.0f;
+                        }
+                    }
+                }
+                catch { }
 
                 // Name (fallback to occ.employee if not a Citizen)
                 string fallbackName = null;
@@ -350,6 +374,107 @@ namespace BackInBusiness
         {
             if (root != null)
                 root.SetActive(false);
+        }
+    }
+}
+
+// Lightweight, IL2CPP-safe retry helper to fetch a citizen portrait shortly after the view appears.
+// Uses Update with unscaled time, avoids coroutines/lambdas/generics.
+namespace BackInBusiness
+{
+    internal class PortraitRetryLoader : MonoBehaviour
+    {
+        public RawImage target;
+        public Citizen citizen;
+        public int addressId = -1;
+        public int rosterIndex = -1;
+        public float interval = 0.25f; // seconds between attempts
+        public float timeLeft = 2.0f;  // total time budget for retries
+
+        private float _timer;
+
+        private void OnEnable()
+        {
+            _timer = interval;
+        }
+
+        private void Update()
+        {
+            try
+            {
+                // Bail if prerequisites are missing or we ran out of time
+                if (target == null)
+                {
+                    Destroy(this);
+                    return;
+                }
+
+                float dt = Time.unscaledDeltaTime;
+                _timer -= dt;
+                timeLeft -= dt;
+                if (timeLeft <= 0f)
+                {
+                    Destroy(this);
+                    return;
+                }
+
+                if (_timer > 0f)
+                    return;
+
+                _timer = interval > 0.05f ? interval : 0.05f;
+
+                // If we don't have a citizen reference, try to resolve via address/roster once we tick
+                if (citizen == null && addressId >= 0 && rosterIndex >= 0)
+                {
+                    try
+                    {
+                        var player = Player.Instance;
+                        if (player != null && player.apartmentsOwned != null)
+                        {
+                            for (int i = 0; i < player.apartmentsOwned.Count; i++)
+                            {
+                                var apt = player.apartmentsOwned[i];
+                                if (apt == null) continue;
+                                if (apt.id != addressId) continue;
+                                if (apt.company != null && apt.company.companyRoster != null)
+                                {
+                                    if (rosterIndex >= 0 && rosterIndex < apt.company.companyRoster.Count)
+                                    {
+                                        var occNow = apt.company.companyRoster[rosterIndex];
+                                        if (occNow != null)
+                                        {
+                                            try { citizen = occNow.employee as Citizen; } catch { }
+                                        }
+                                    }
+                                }
+                                break; // Found address, stop searching
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // Attempt to fetch the portrait
+                try
+                {
+                    if (citizen != null && citizen.evidenceEntry != null)
+                    {
+                        var keys = new Il2CppSystem.Collections.Generic.List<Evidence.DataKey>();
+                        keys.Add(Evidence.DataKey.photo);
+                        Texture2D tex = citizen.evidenceEntry.GetPhoto(keys);
+                        if (tex != null)
+                        {
+                            target.texture = tex;
+                            target.color = Color.white;
+                            try { Plugin.Logger.LogInfo("PortraitRetryLoader: portrait acquired on retry"); } catch { }
+                            Destroy(this);
+                            return;
+                        }
+                    }
+                }
+                catch { }
+            }
+            catch { Destroy(this); }
         }
     }
 }

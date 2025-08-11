@@ -445,6 +445,8 @@ namespace BackInBusiness
                 
                 case PanelState.BusinessDetails:
                     businessDetailsContainer.SetActive(true);
+                    // Proactively rebuild/refresh the company roster so employee refs are up-to-date
+                    try { RebuildRosterForSelectedBusiness(); } catch { }
                     RefreshBusinessDetails();
                     // Reset selected employee when returning to list
                     selectedEmployeeCitizen = null;
@@ -954,6 +956,10 @@ namespace BackInBusiness
                             photoRect.anchoredPosition = new UnityEngine.Vector2(8f, 0f);
                             photoRect.sizeDelta = new UnityEngine.Vector2(48f, 48f);
 
+                            // Start with placeholder tint
+                            photoImg.texture = null;
+                            photoImg.color = new Color(0.25f, 0.25f, 0.25f, 1f);
+
                             // Try to fetch the citizen's evidence photo texture
                             Citizen citizenForPhoto = null;
                             try { citizenForPhoto = occ != null ? occ.employee as Citizen : null; } catch { }
@@ -967,6 +973,22 @@ namespace BackInBusiness
                                 {
                                     photoImg.texture = tex;
                                     photoImg.color = Color.white;
+                                }
+                            }
+
+                            // If still no texture, attach a retry loader to reduce white/blank portraits
+                            if (photoImg.texture == null && citizenForPhoto != null)
+                            {
+                                try { var old = photoGO.GetComponent(Il2CppType.Of<PortraitRetryLoader>()) as PortraitRetryLoader; if (old != null) UnityEngine.Object.Destroy(old); } catch { }
+                                var t = Il2CppType.Of<PortraitRetryLoader>();
+                                var comp = photoGO.GetComponent(t) as PortraitRetryLoader;
+                                if (comp == null) comp = photoGO.AddComponent(t) as PortraitRetryLoader;
+                                if (comp != null)
+                                {
+                                    comp.target = photoImg;
+                                    comp.citizen = citizenForPhoto;
+                                    comp.interval = 0.25f;
+                                    comp.timeLeft = 2.0f;
                                 }
                             }
                         }
@@ -1049,8 +1071,8 @@ namespace BackInBusiness
                                         }
                                     }
                                     try { Plugin.Logger.LogInfo($"EmpRowClick: occNow={(occNow!=null ? (string.IsNullOrEmpty(occNow.name)? (occNow.preset!=null?occNow.preset.name:"<no preset>") : occNow.name) : "<null>")}, citizenNow={(citizenNow!=null?citizenNow.GetCitizenName():"<null>")}"); } catch { }
-                                    // Pass address and index to panel for robust re-resolution inside the panel
-                                    CreateEmployeeWindow(addressIdForClick, rosterIndex);
+                                    // Pass address/index and also the displayed name/role for robust fallback matching inside the panel
+                                    CreateEmployeeWindow(addressIdForClick, rosterIndex, empNameForClick, roleForClick);
                                 }
                                 catch (System.Exception ex)
                                 {
@@ -1309,6 +1331,84 @@ namespace BackInBusiness
             {
                 Plugin.Logger.LogError($"Error getting owned businesses: {ex.Message}\n{ex.StackTrace}");
                 ownedBusinesses = new List<OwnedBusinessData>();
+            }
+        }
+
+        // Attempt to rebuild/refresh the company roster for the currently selected business
+        private void RebuildRosterForSelectedBusiness()
+        {
+            try
+            {
+                if (selectedOwnedBusiness == null)
+                {
+                    return;
+                }
+                int addrId = selectedOwnedBusiness.AddressId;
+                int beforeCount = -1;
+                int beforeAssigned = -1;
+                try
+                {
+                    var aptBefore = FindApartmentById(addrId);
+                    if (aptBefore != null && aptBefore.company != null && aptBefore.company.companyRoster != null)
+                    {
+                        beforeCount = aptBefore.company.companyRoster.Count;
+                        int assigned = 0;
+                        for (int i = 0; i < aptBefore.company.companyRoster.Count; i++)
+                        {
+                            var o = aptBefore.company.companyRoster[i];
+                            if (o != null && o.employee != null) assigned++;
+                        }
+                        beforeAssigned = assigned;
+                    }
+                }
+                catch { }
+
+                // Nudge manager queries that appear to rebuild internal caches used by roster/employees
+                try { var _ = BusinessManager.Instance.GetBusinessByAddressId(); } catch { }
+                try { var __ = BusinessManager.Instance.OwnedBusinesses; } catch { }
+
+                // Refresh our ownedBusinesses cache and re-bind the selected entry
+                try { GetOwnedBusinesses(); } catch { }
+                try
+                {
+                    if (ownedBusinesses != null)
+                    {
+                        for (int i = 0; i < ownedBusinesses.Count; i++)
+                        {
+                            if (ownedBusinesses[i].AddressId == addrId)
+                            {
+                                selectedOwnedBusiness = ownedBusinesses[i];
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // Log after metrics
+                try
+                {
+                    var aptAfter = FindApartmentById(addrId);
+                    int afterCount = -1;
+                    int afterAssigned = -1;
+                    if (aptAfter != null && aptAfter.company != null && aptAfter.company.companyRoster != null)
+                    {
+                        afterCount = aptAfter.company.companyRoster.Count;
+                        int assigned2 = 0;
+                        for (int i = 0; i < aptAfter.company.companyRoster.Count; i++)
+                        {
+                            var o = aptAfter.company.companyRoster[i];
+                            if (o != null && o.employee != null) assigned2++;
+                        }
+                        afterAssigned = assigned2;
+                    }
+                    Plugin.Logger.LogInfo($"RebuildRosterForSelectedBusiness: addr={addrId}, roster before {beforeAssigned}/{beforeCount}, after {afterAssigned}/{afterCount}");
+                }
+                catch { }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogWarning($"RebuildRosterForSelectedBusiness error: {ex.Message}");
             }
         }
 
@@ -1665,7 +1765,7 @@ namespace BackInBusiness
         }
 
         // Create a floating employee detail window using a UniverseLib Panel (built-in draggable header)
-        private void CreateEmployeeWindow(int addressId, int rosterIndex)
+        private void CreateEmployeeWindow(int addressId, int rosterIndex, string employeeNameHint = null, string roleNameHint = null)
         {
             if (this.Owner == null) return;
             // We no longer need a custom overlay/drag handler; use PanelBase which already supports dragging.
@@ -1688,16 +1788,30 @@ namespace BackInBusiness
             catch { }
 
             string name = citizen != null ? citizen.GetCitizenName() : (occ != null && occ.employee != null ? occ.employee.name?.ToString() : "Employee");
+            // Compute role label for fallback matching
+            string roleLabel = "Worker";
+            try
+            {
+                if (occ != null)
+                {
+                    if (!string.IsNullOrEmpty(occ.name)) roleLabel = occ.name;
+                    else if (occ.preset != null && !string.IsNullOrEmpty(occ.preset.name)) roleLabel = occ.preset.name;
+                }
+            }
+            catch { }
+            // Prefer hints captured from UI row if provided
+            string nameForInit = !string.IsNullOrEmpty(employeeNameHint) ? employeeNameHint : name;
+            string roleForInit = !string.IsNullOrEmpty(roleNameHint) ? roleNameHint : roleLabel;
             try
             {
                 string occLabel = occ != null ? (string.IsNullOrEmpty(occ.name) ? (occ.preset != null ? occ.preset.name : "<no preset>") : occ.name) : "<null>";
                 string citLabel = citizen != null ? citizen.GetCitizenName() : "<null>";
-                Plugin.Logger.LogInfo($"CreateEmployeeWindow: addr={addressId}, idx={rosterIndex}, name={name}, citizen={citLabel}, occ={occLabel}");
+                Plugin.Logger.LogInfo($"CreateEmployeeWindow: addr={addressId}, idx={rosterIndex}, name={nameForInit}, citizen={citLabel}, occ={occLabel}, hintRole={roleForInit}");
             }
             catch { }
 
             // Push init args so the panel can pop them during ConstructPanelContent (which runs before ctor body under IL2CPP)
-            try { FloatingEmployeePanel.PushInit(addressId, rosterIndex, citizen, occ, $"{name} Details"); } catch { }
+            try { FloatingEmployeePanel.PushInit(addressId, rosterIndex, citizen, occ, $"{nameForInit} Details", nameForInit, roleForInit); } catch { }
             var panel = new FloatingEmployeePanel(this.Owner, $"{name} Details", openEmployeePanels.Count);
             panel.SetActive(true);
             openEmployeePanels.Add(panel);

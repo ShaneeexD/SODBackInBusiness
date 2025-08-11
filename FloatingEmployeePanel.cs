@@ -28,11 +28,13 @@ namespace BackInBusiness
             public Citizen citizen;
             public Occupation occupation;
             public string title;
+            public string employeeName;
+            public string roleName;
         }
         private static readonly Stack<InitArgs> PendingInits = new Stack<InitArgs>();
-        public static void PushInit(int addressId, int rosterIndex, Citizen citizen, Occupation occupation, string title)
+        public static void PushInit(int addressId, int rosterIndex, Citizen citizen, Occupation occupation, string title, string employeeName, string roleName)
         {
-            try { PendingInits.Push(new InitArgs { addressId = addressId, rosterIndex = rosterIndex, citizen = citizen, occupation = occupation, title = title }); }
+            try { PendingInits.Push(new InitArgs { addressId = addressId, rosterIndex = rosterIndex, citizen = citizen, occupation = occupation, title = title, employeeName = employeeName, roleName = roleName }); }
             catch { }
         }
 
@@ -40,7 +42,7 @@ namespace BackInBusiness
 
         public override string Name => _panelName;
         public override int MinWidth => 300;
-        public override int MinHeight => 100;
+        public override int MinHeight => 85;
         public override Vector2 DefaultAnchorMin => _anchorMin;
         public override Vector2 DefaultAnchorMax => _anchorMax;
 
@@ -94,6 +96,8 @@ namespace BackInBusiness
                 int addrArg = -1;
                 int rosterIdx = -1;
                 string titleArg = _panelName;
+                string empNameArg = null;
+                string roleNameArg = null;
                 try
                 {
                     if (PendingInits.Count > 0)
@@ -104,23 +108,84 @@ namespace BackInBusiness
                         citizenArg = init.citizen;
                         occArg = init.occupation;
                         if (!string.IsNullOrEmpty(init.title)) titleArg = init.title;
+                        if (!string.IsNullOrEmpty(init.employeeName)) empNameArg = init.employeeName;
+                        if (!string.IsNullOrEmpty(init.roleName)) roleNameArg = init.roleName;
                     }
                 }
                 catch { }
 
-                // If citizen/occupation still null, try resolve via BusinessUIManager by address/index
+                // If citizen/occupation still null, try resolve via address/index directly to avoid stale IL2CPP refs
                 if ((citizenArg == null || occArg == null) && addrArg >= 0 && rosterIdx >= 0)
                 {
                     try
                     {
-                        var apt = BusinessUIManager.Instance != null ? (BusinessUIManager)BusinessUIManager.Instance : null;
+                        // Re-resolve from Player-owned apartments by address and roster index
+                        var player = Player.Instance;
+                        if (player != null && player.apartmentsOwned != null)
+                        {
+                            for (int i = 0; i < player.apartmentsOwned.Count; i++)
+                            {
+                                var apt = player.apartmentsOwned[i];
+                                if (apt == null) continue;
+                                if (apt.id != addrArg) continue;
+                                if (apt.company != null && apt.company.companyRoster != null)
+                                {
+                                    if (rosterIdx >= 0 && rosterIdx < apt.company.companyRoster.Count)
+                                    {
+                                        var occNow = apt.company.companyRoster[rosterIdx];
+                                        if (occNow != null)
+                                        {
+                                            occArg = occNow;
+                                            try { citizenArg = occNow.employee as Citizen; } catch { }
+                                        }
+                                    }
+
+                                    // Fallback: if still missing, try matching by employee name or role
+                                    if ((occArg == null || citizenArg == null) && apt.company.companyRoster.Count > 0)
+                                    {
+                                        try
+                                        {
+                                            for (int r = 0; r < apt.company.companyRoster.Count; r++)
+                                            {
+                                                var o = apt.company.companyRoster[r];
+                                                if (o == null) continue;
+                                                string oRole = null;
+                                                try { if (!string.IsNullOrEmpty(o.name)) oRole = o.name; else if (o.preset != null) oRole = o.preset.name; } catch { }
+                                                Citizen cTry = null;
+                                                try { cTry = o.employee as Citizen; } catch { }
+                                                string cName = null;
+                                                try { if (cTry != null) cName = cTry.GetCitizenName(); else if (o.employee != null && o.employee.name != null) cName = o.employee.name.ToString(); } catch { }
+                                                bool nameMatch = !string.IsNullOrEmpty(empNameArg) && !string.IsNullOrEmpty(cName) && cName == empNameArg;
+                                                bool roleMatch = !string.IsNullOrEmpty(roleNameArg) && !string.IsNullOrEmpty(oRole) && oRole == roleNameArg;
+                                                if (nameMatch || roleMatch)
+                                                {
+                                                    occArg = o;
+                                                    citizenArg = cTry;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+                                break; // Found address, stop searching
+                            }
+                        }
                     }
                     catch { }
                 }
 
+                try
+                {
+                    string occLabel = occArg != null ? (string.IsNullOrEmpty(occArg.name) ? (occArg.preset != null ? occArg.preset.name : "<no preset>") : occArg.name) : "<null>";
+                    string citLabel = citizenArg != null ? citizenArg.GetCitizenName() : "<null>";
+                    Plugin.Logger.LogInfo($"FloatingEmployeePanel.Resolve: addr={addrArg}, idx={rosterIdx}, empName={empNameArg ?? "<null>"}, role={roleNameArg ?? "<null>"}, citizen={citLabel}, occ={occLabel}");
+                }
+                catch { }
+
                 _view = new EmployeeDetailsView();
                 _view.Build(content);
-                _view.Show(citizenArg ?? _citizen, occArg ?? _occupation);
+                _view.Show(citizenArg ?? _citizen, occArg ?? _occupation, addrArg, rosterIdx);
                 try { _view.BringToFront(); } catch { }
 
                 // Optional: add a small Close button inside content for redundancy
