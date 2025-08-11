@@ -103,6 +103,74 @@ namespace BackInBusiness
                     // If panel doesn't exist yet, create it
                     CreateBusinessUI();
                 }
+                // After toggling/creating, manage game pause & input state based on panel visibility
+                if (businessPanel != null && !businessPanel.Enabled)
+                {
+                    uiEnabled = false;
+                    try
+                    {
+                        // Force any UniverseLib panel resizing to end
+                        UniverseLib.UI.Panels.PanelManager.ForceEndResize();
+                        
+                        // Ensure the panel is fully closed
+                        businessPanel.SetActive(false);
+                        
+                        // Reset the event system focus
+                        if (UnityEngine.EventSystems.EventSystem.current != null)
+                        {
+                            // Clear selection
+                            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+                            
+                            // Optionally set focus back to game canvas if it exists
+                            var gameCanvas = UnityEngine.GameObject.Find("GameCanvas");
+                            if (gameCanvas != null)
+                            {
+                                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(gameCanvas);
+                            }
+                        }
+                        
+                        // Reset input through UniverseLib
+                        UniverseLib.Input.InputManager.ResetInputAxes();
+                        
+                        // Re-enable game controls (order matters)
+                        InputController.Instance.enabled = true;
+                        Player.Instance.EnableCharacterController(true);
+                        Player.Instance.EnablePlayerMouseLook(true, true);
+                        
+                        // Resume the game
+                        SessionData sessionData = SessionData.Instance;
+                        sessionData.ResumeGame();
+                        
+                        // Lock cursor for game control
+                        Cursor.lockState = CursorLockMode.Locked;
+                        Cursor.visible = false;
+                        
+                        Plugin.Logger.LogInfo("Game input restored, UI closed");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Plugin.Logger.LogError($"Failed to update input control: {ex.Message}");
+                    }
+                }
+                else if (businessPanel != null && businessPanel.Enabled)
+                {
+                    uiEnabled = true;
+                    
+                    // Disable game controls while UI is open
+                    Player.Instance.EnablePlayerMouseLook(false, false);
+                    Player.Instance.EnableCharacterController(false);
+                    InputController.Instance.enabled = false;
+                    
+                    // Pause the game
+                    SessionData sessionData = SessionData.Instance;
+                    sessionData.PauseGame(false, false, true);
+                    
+                    // Show cursor for UI interaction
+                    Cursor.lockState = CursorLockMode.None;
+                    Cursor.visible = true;
+                    
+                    Plugin.Logger.LogInfo("Game input disabled, UniverseLib input blocking enabled");
+                }
             }
             catch (System.Exception ex)
             {
