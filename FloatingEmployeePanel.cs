@@ -40,7 +40,7 @@ namespace BackInBusiness
 
         public override string Name => _panelName;
         public override int MinWidth => 300;
-        public override int MinHeight => 200;
+        public override int MinHeight => 100;
         public override Vector2 DefaultAnchorMin => _anchorMin;
         public override Vector2 DefaultAnchorMax => _anchorMax;
 

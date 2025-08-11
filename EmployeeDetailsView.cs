@@ -43,26 +43,26 @@ namespace BackInBusiness
             pRt.anchorMax = new Vector2(0f, 1f);
             pRt.pivot = new Vector2(0f, 1f);
             pRt.anchoredPosition = new Vector2(12f, -20f);
-            pRt.sizeDelta = new Vector2(80f, 80f);
+            pRt.sizeDelta = new Vector2(128f, 128f);
 
             // Name
             nameText = UIFactory.CreateLabel(root, "Emp_Name", "Name", TextAnchor.UpperLeft);
             var nameRt = nameText.GetComponent<RectTransform>();
-            // Top row to the right of portrait
-            nameRt.anchorMin = new Vector2(0.18f, 0.82f);
-            nameRt.anchorMax = new Vector2(0.98f, 0.98f);
+            // Top row to the right of portrait (tighter spacing)
+            nameRt.anchorMin = new Vector2(0.20f, 0.86f);
+            nameRt.anchorMax = new Vector2(0.98f, 0.96f);
             nameRt.offsetMin = Vector2.zero;
             nameRt.offsetMax = Vector2.zero;
-            nameText.fontSize = 18;
+            nameText.fontSize = 22;
             nameText.fontStyle = FontStyle.Bold;
             nameText.color = Color.white;
 
             // Job title
             jobText = UIFactory.CreateLabel(root, "Emp_Job", "Job", TextAnchor.UpperLeft);
             var jobRt = jobText.GetComponent<RectTransform>();
-            // Second row under name
-            jobRt.anchorMin = new Vector2(0.18f, 0.65f);
-            jobRt.anchorMax = new Vector2(0.98f, 0.82f);
+            // Directly under name
+            jobRt.anchorMin = new Vector2(0.20f, 0.76f);
+            jobRt.anchorMax = new Vector2(0.98f, 0.86f);
             jobRt.offsetMin = Vector2.zero;
             jobRt.offsetMax = Vector2.zero;
             jobText.fontSize = 14;
@@ -71,9 +71,9 @@ namespace BackInBusiness
             // Salary
             salaryText = UIFactory.CreateLabel(root, "Emp_Salary", "Salary", TextAnchor.UpperLeft);
             var salRt = salaryText.GetComponent<RectTransform>();
-            // Third row under job
-            salRt.anchorMin = new Vector2(0.18f, 0.50f);
-            salRt.anchorMax = new Vector2(0.98f, 0.65f);
+            // Below occupation
+            salRt.anchorMin = new Vector2(0.20f, 0.68f);
+            salRt.anchorMax = new Vector2(0.98f, 0.76f);
             salRt.offsetMin = Vector2.zero;
             salRt.offsetMax = Vector2.zero;
             salaryText.fontSize = 14;
@@ -122,19 +122,7 @@ namespace BackInBusiness
                 Plugin.Logger.LogInfo("Fire clicked (todo)");
             };
 
-            // Center debug label to confirm visibility
-            try
-            {
-                Text dbgCenter = UIFactory.CreateLabel(root, "Emp_DebugCenter", "EMP DETAILS DEBUG", TextAnchor.MiddleCenter);
-                var dcrt = dbgCenter.GetComponent<RectTransform>();
-                dcrt.anchorMin = new Vector2(0.1f, 0.35f);
-                dcrt.anchorMax = new Vector2(0.9f, 0.65f);
-                dcrt.offsetMin = Vector2.zero;
-                dcrt.offsetMax = Vector2.zero;
-                dbgCenter.fontSize = 20;
-                dbgCenter.color = new Color(1f, 0.95f, 0.2f, 1f);
-            }
-            catch { }
+            // (Removed debug label used during diagnostics)
 
             Hide();
             Plugin.Logger.LogInfo("EmployeeDetailsView.Build complete (hidden by default)");
