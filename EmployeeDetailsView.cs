@@ -9,6 +9,154 @@ using Il2CppInterop.Runtime;
 
 namespace BackInBusiness
 {
+    // Lightweight theme helper: find the game's Container_Card and its sprites (no bundles),
+    // and optionally instantiate a clone under our UI.
+    internal static class UIThemeCache
+    {
+        private static bool _attempted;
+        public static Transform CardTemplate; // The source Container_Card to clone
+        public static Sprite CardBG;
+        public static Sprite CardNoise;
+        public static Sprite CardPaper;
+
+        private static string GetPath(Transform t)
+        {
+            try
+            {
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                var cur = t;
+                int guard = 0;
+                while (cur != null && guard++ < 64)
+                {
+                    if (sb.Length == 0) sb.Insert(0, cur.name);
+                    else sb.Insert(0, cur.name + "/");
+                    cur = cur.parent;
+                }
+                return sb.ToString();
+            }
+            catch { return t != null ? t.name : "<null>"; }
+        }
+
+        public static bool EnsureLoaded()
+        {
+            if (_attempted) return (CardTemplate != null) || (CardBG != null || CardNoise != null || CardPaper != null);
+            _attempted = true;
+            try
+            {
+                try { Plugin.Logger.LogInfo("UIThemeCache: scanning scene for Container_Card..."); } catch { }
+                var all = Resources.FindObjectsOfTypeAll<Transform>();
+                Transform best = null;
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var t = all[i];
+                    if (t == null) continue;
+                    var tn = t.name ?? string.Empty;
+                    if (!string.Equals(tn, "Container_Card", StringComparison.Ordinal) &&
+                        !string.Equals(tn, "Container Card", StringComparison.Ordinal) &&
+                        tn.IndexOf("Container_Card", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    // Prefer one under Detective's Notebook hierarchy, but accept any if needed
+                    bool prefer = false;
+                    try
+                    {
+                        int depth = 0; var p = t.parent;
+                        while (p != null && depth++ < 20)
+                        {
+                            if (!string.IsNullOrEmpty(p.name) && p.name.IndexOf("Detective", StringComparison.OrdinalIgnoreCase) >= 0)
+                            { prefer = true; break; }
+                            p = p.parent;
+                        }
+                    }
+                    catch { }
+
+                    if (best == null || prefer)
+                        best = t;
+                    if (prefer) break;
+                }
+
+                if (best != null)
+                {
+                    CardTemplate = best;
+                    try { Plugin.Logger.LogInfo($"UIThemeCache: Found card template at {GetPath(best)}"); } catch { }
+
+                    // Extract sprites for manual fallback usage
+                    try
+                    {
+                        Transform bgT = best.Find("BG");
+                        Transform noiseT = best.Find("Mask_CardNoise");
+                        Transform paperT = best.Find("Container_Paper");
+                        if (bgT != null)
+                        {
+                            var img = bgT.GetComponent<Image>();
+                            if (img != null) CardBG = img.sprite;
+                        }
+                        if (noiseT != null)
+                        {
+                            var img = noiseT.GetComponent<Image>();
+                            if (img != null) CardNoise = img.sprite;
+                        }
+                        if (paperT != null)
+                        {
+                            var img = paperT.GetComponent<Image>();
+                            if (img != null) CardPaper = img.sprite;
+                        }
+                    }
+                    catch { }
+                }
+                else
+                {
+                    try { Plugin.Logger.LogWarning("UIThemeCache: Could not locate Container_Card in scene."); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.EnsureLoaded error: {ex.Message}"); } catch { }
+            }
+            return (CardTemplate != null) || (CardBG != null || CardNoise != null || CardPaper != null);
+        }
+
+        public static GameObject InstantiateCard(Transform parent)
+        {
+            try
+            {
+                if (!EnsureLoaded() || CardTemplate == null) return null;
+                var inst = UnityEngine.Object.Instantiate(CardTemplate.gameObject);
+                inst.name = "Emp_Container_Card";
+                var rt = inst.GetComponent<RectTransform>();
+                if (rt == null) rt = inst.AddComponent<RectTransform>();
+                rt.SetParent(parent, false);
+                rt.anchorMin = new Vector2(0f, 0f);
+                rt.anchorMax = new Vector2(1f, 1f);
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = Vector2.zero;
+                // Ensure visuals don't block clicks
+                try
+                {
+                    var imgs = inst.GetComponentsInChildren<Image>(true);
+                    for (int i = 0; i < imgs.Length; i++) imgs[i].raycastTarget = false;
+                }
+                catch { }
+                // Avoid nested canvases or raycasters from the source hierarchy
+                try
+                {
+                    var canvases = inst.GetComponentsInChildren<Canvas>(true);
+                    for (int i = 0; i < canvases.Length; i++) UnityEngine.Object.Destroy(canvases[i]);
+                    var raycasters = inst.GetComponentsInChildren<GraphicRaycaster>(true);
+                    for (int i = 0; i < raycasters.Length; i++) UnityEngine.Object.Destroy(raycasters[i]);
+                }
+                catch { }
+                try { Plugin.Logger.LogInfo("UIThemeCache: Instantiated Container_Card under EmployeeDetailsView."); } catch { }
+                return inst;
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.InstantiateCard error: {ex.Message}"); } catch { }
+                return null;
+            }
+        }
+    }
+
     internal class EmployeeDetailsView
     {
         private GameObject root;
@@ -34,6 +182,21 @@ namespace BackInBusiness
             // Use parent panel's Canvas; do not add our own to avoid cross-canvas sorting issues.
             // Ensure we're the last sibling so our children draw above the panel content background.
             root.transform.SetAsLastSibling();
+
+            // Card root first (background container behind all content)
+            GameObject cardRoot = UIFactory.CreateUIObject("Emp_CardRoot", root);
+            var cardRt = cardRoot.GetComponent<RectTransform>();
+            cardRt.anchorMin = new Vector2(0f, 0f);
+            cardRt.anchorMax = new Vector2(1f, 1f);
+            cardRt.offsetMin = Vector2.zero;
+            cardRt.offsetMax = Vector2.zero;
+            // Mask like original card
+            try { if (cardRoot.GetComponent<RectMask2D>() == null) cardRoot.AddComponent<RectMask2D>(); } catch { }
+            // Ensure background is behind all other children
+            try { cardRoot.transform.SetAsFirstSibling(); } catch { }
+
+            // Try cloning the actual game's Container_Card; falls back to manual layers
+            GameObject clonedCard = UIThemeCache.InstantiateCard(cardRoot.transform);
 
             // Portrait (bigger)
             var portraitGO = UIFactory.CreateUIObject("Emp_Portrait", root);
@@ -80,22 +243,77 @@ namespace BackInBusiness
             salaryText.fontSize = 14;
             salaryText.color = Color.white;
 
-            // Background box
-            GameObject bg = UIFactory.CreateUIObject("Emp_BG", root);
-            var bgImg = bg.GetComponent<UnityEngine.UI.Image>();
-            if (bgImg == null) bgImg = bg.AddComponent<UnityEngine.UI.Image>();
-            // Make it clearly visible
-            bgImg.color = new Color(0.12f, 0.12f, 0.12f, 1f);
-            // Do not block clicks and make sure it renders behind all other children
-            bgImg.raycastTarget = false;
-            var bgRt = bg.GetComponent<RectTransform>();
-            bgRt.anchorMin = new Vector2(0f, 0f);
-            bgRt.anchorMax = new Vector2(1f, 1f);
-            bgRt.offsetMin = Vector2.zero;
-            bgRt.offsetMax = Vector2.zero;
-            try { bg.transform.SetAsFirstSibling(); Plugin.Logger.LogInfo("Emp_BG moved to first sibling (behind content)"); } catch { }
-            // Ensure the background renders behind other children
-            try { bg.transform.SetAsFirstSibling(); } catch { }
+            // Background and themed layers (Card BG / Paper / Noise) only if cloning failed
+            if (clonedCard == null)
+            {
+                bool themed = UIThemeCache.EnsureLoaded();
+
+                // BG
+                GameObject bg = UIFactory.CreateUIObject("Emp_BG", cardRoot);
+                var bgImg = bg.GetComponent<UnityEngine.UI.Image>();
+                if (bgImg == null) bgImg = bg.AddComponent<UnityEngine.UI.Image>();
+                if (themed && UIThemeCache.CardBG != null)
+                {
+                    bgImg.sprite = UIThemeCache.CardBG;
+                    bgImg.type = Image.Type.Sliced;
+                    bgImg.color = Color.white;
+                }
+                else
+                {
+                    bgImg.color = new Color(0.12f, 0.12f, 0.12f, 1f);
+                }
+                bgImg.raycastTarget = false;
+                var bgRt = bg.GetComponent<RectTransform>();
+                bgRt.anchorMin = new Vector2(0f, 0f);
+                bgRt.anchorMax = new Vector2(1f, 1f);
+                bgRt.offsetMin = Vector2.zero;
+                bgRt.offsetMax = Vector2.zero;
+                try { bg.transform.SetAsFirstSibling(); } catch { }
+
+                // Paper
+                GameObject paper = UIFactory.CreateUIObject("Emp_Paper", cardRoot);
+                var paperImg = paper.GetComponent<UnityEngine.UI.Image>();
+                if (paperImg == null) paperImg = paper.AddComponent<UnityEngine.UI.Image>();
+                paperImg.raycastTarget = false;
+                if (themed && UIThemeCache.CardPaper != null)
+                {
+                    paperImg.sprite = UIThemeCache.CardPaper;
+                    paperImg.type = Image.Type.Sliced;
+                    paperImg.color = Color.white;
+                }
+                else
+                {
+                    paperImg.color = new Color(0.95f, 0.95f, 0.92f, 1f);
+                }
+                var paperRt = paper.GetComponent<RectTransform>();
+                paperRt.anchorMin = new Vector2(0f, 0f);
+                paperRt.anchorMax = new Vector2(1f, 1f);
+                paperRt.offsetMin = Vector2.zero;
+                paperRt.offsetMax = Vector2.zero;
+                try { paper.transform.SetSiblingIndex(1); } catch { }
+
+                // Noise
+                GameObject noise = UIFactory.CreateUIObject("Emp_Noise", cardRoot);
+                var noiseImg = noise.GetComponent<UnityEngine.UI.Image>();
+                if (noiseImg == null) noiseImg = noise.AddComponent<UnityEngine.UI.Image>();
+                noiseImg.raycastTarget = false;
+                if (themed && UIThemeCache.CardNoise != null)
+                {
+                    noiseImg.sprite = UIThemeCache.CardNoise;
+                    noiseImg.type = Image.Type.Simple;
+                    var c = Color.white; c.a = 0.22f; noiseImg.color = c;
+                }
+                else
+                {
+                    var c = Color.white; c.a = 0f; noiseImg.color = c;
+                }
+                var noiseRt = noise.GetComponent<RectTransform>();
+                noiseRt.anchorMin = new Vector2(0f, 0f);
+                noiseRt.anchorMax = new Vector2(1f, 1f);
+                noiseRt.offsetMin = Vector2.zero;
+                noiseRt.offsetMax = Vector2.zero;
+                try { noise.transform.SetSiblingIndex(2); } catch { }
+            }
 
             // Buttons container - bottom bar
             GameObject btnRow = UIFactory.CreateHorizontalGroup(root, "Emp_Buttons", true, false, true, true, 12);
