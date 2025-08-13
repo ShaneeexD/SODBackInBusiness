@@ -711,9 +711,9 @@ namespace BackInBusiness
                             // Configure button sound settings for close button
                             controller.useGenericAudioSounds = false; // Use custom audio events instead of generic ones
                             controller.isCloseButton = true; // Special flag to play both close and page sounds
-                            controller.buttonDown = AudioControls.Instance.panelIconButton; // Button down sound
-                            controller.clickPrimary = AudioControls.Instance.closeButton; // Close button sound
-                            controller.clickSecondary = AudioControls.Instance.tab; // Page/back sound
+                            //controller.buttonDown = AudioControls.Instance.panelIconButton; // Button down sound
+                            controller.clickPrimary = AudioControls.Instance.folderClose; // Folder close sound
+                            controller.clickSecondary = AudioControls.Instance.pageBack; // Page back sound
                         }
                         catch { }
                         if (controller.TargetImage == null)
