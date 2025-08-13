@@ -476,18 +476,67 @@ namespace BackInBusiness
                     borderRt.offsetMin = new Vector2(8f, 8f);
                     borderRt.offsetMax = new Vector2(-8f, -8f);
                     
-                    // Add a custom border image with rounded corners
+                    // Add a border image with rounded corners
                     var borderImg = borderFrame.AddComponent<Image>();
-                    
-                    // Create a custom rounded rectangle sprite with larger radius
-                    Texture2D roundedTexture = CreateRoundedRectTexture(128, 128, 30);
-                    borderImg.sprite = Sprite.Create(roundedTexture, new Rect(0, 0, roundedTexture.width, roundedTexture.height), 
-                                                   new Vector2(0.5f, 0.5f), 100f, 1, SpriteMeshType.FullRect, 
-                                                   new Vector4(30, 30, 30, 30)); // Border sizes for 9-slice
-                    borderImg.type = Image.Type.Sliced;
-                    // Use a color similar to the Detective's Notebook paper edge
-                    borderImg.color = new Color(0.45f, 0.4f, 0.35f, 1f); // Darker paper color
-                    Plugin.Logger?.LogInfo("NotebookThemeHelper: Created custom rounded corner border");
+
+                    // Local deep-search helper
+                    Transform FindDeep(Transform root, string target)
+                    {
+                        if (root == null) return null;
+                        if (string.Equals(root.name, target, StringComparison.Ordinal)) return root;
+                        for (int i = 0; i < root.childCount; i++)
+                        {
+                            var c = root.GetChild(i);
+                            var f = FindDeep(c, target);
+                            if (f != null) return f;
+                        }
+                        return null;
+                    }
+
+                    bool copiedFromLiveNotebook = false;
+                    try
+                    {
+                        // Try to copy RoundedBorder sprite/type/color from the live Detective's Notebook window if present
+                        var allWindows = UnityEngine.Object.FindObjectsOfType<InfoWindow>();
+                        for (int i = 0; i < allWindows.Length; i++)
+                        {
+                            var w = allWindows[i];
+                            if (w != null && w.preset != null && string.Equals(w.preset.name, "DetectivesNotebook", StringComparison.Ordinal))
+                            {
+                                var rb = FindDeep(w.transform, "RoundedBorder");
+                                if (rb != null)
+                                {
+                                    var srcImg = rb.GetComponent<Image>();
+                                    if (srcImg != null && srcImg.sprite != null)
+                                    {
+                                        borderImg.sprite = srcImg.sprite;
+                                        borderImg.type = srcImg.type;
+                                        borderImg.pixelsPerUnitMultiplier = srcImg.pixelsPerUnitMultiplier;
+                                        borderImg.color = srcImg.color;
+                                        copiedFromLiveNotebook = true;
+                                        Plugin.Logger?.LogInfo("NotebookThemeHelper: Copied RoundedBorder from live Detective's Notebook");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Logger?.LogWarning($"NotebookThemeHelper: Failed to copy border from live notebook: {ex.Message}");
+                    }
+
+                    if (!copiedFromLiveNotebook)
+                    {
+                        // Fallback: create a custom rounded rectangle sprite (9-sliced)
+                        Texture2D roundedTexture = CreateRoundedRectTexture(128, 128, 30);
+                        borderImg.sprite = Sprite.Create(roundedTexture, new Rect(0, 0, roundedTexture.width, roundedTexture.height),
+                                                       new Vector2(0.5f, 0.5f), 100f, 1, SpriteMeshType.FullRect,
+                                                       new Vector4(30, 30, 30, 30));
+                        borderImg.type = Image.Type.Sliced;
+                        borderImg.color = new Color(0.45f, 0.4f, 0.35f, 1f);
+                        Plugin.Logger?.LogInfo("NotebookThemeHelper: Created custom rounded corner border (fallback)");
+                    }
                     
                     // Create a dark background inside the border
                     GameObject darkBg = new GameObject("DarkBackground");

@@ -828,7 +828,7 @@ namespace BackInBusiness
                 jobRt.anchorMin = new Vector2(0f, 1f);
                 jobRt.anchorMax = new Vector2(0f, 1f);
                 jobRt.pivot = new Vector2(0f, 1f);
-                jobRt.anchoredPosition = new Vector2(80f + 128f + 12f, -30f - 40f);
+                jobRt.anchoredPosition = new Vector2(80f + 128f + 12f, -40f);
                 jobRt.sizeDelta = new Vector2(380f, 22f);
                 jobText.fontSize = 14f;
                 jobText.color = Color.black;
@@ -847,7 +847,7 @@ namespace BackInBusiness
                 salRt.anchorMin = new Vector2(0f, 1f);
                 salRt.anchorMax = new Vector2(0f, 1f);
                 salRt.pivot = new Vector2(0f, 1f);
-                salRt.anchoredPosition = new Vector2(80f + 128f + 12f, -30f - 40f - 24f);
+                salRt.anchoredPosition = new Vector2(80f + 128f + 12f, -40f - 24f);
                 salRt.sizeDelta = new Vector2(380f, 22f);
                 // Font size and color
                 salaryText.fontSize = 14f;
