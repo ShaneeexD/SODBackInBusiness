@@ -1,6 +1,8 @@
 using System;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Events;
+using UnityEngine.EventSystems;
 using UniverseLib;
 using UniverseLib.UI;
 using UniverseLib.UI.Models;
@@ -15,6 +17,7 @@ namespace BackInBusiness
     {
         private static bool _attempted;
         public static Transform CardTemplate; // The source Container_Card to clone
+        public static Transform CloseTemplate; // The preferred Close button template near the card
         public static Sprite CardBG;
         public static Sprite CardNoise;
         public static Sprite CardPaper;
@@ -37,9 +40,31 @@ namespace BackInBusiness
             catch { return t != null ? t.name : "<null>"; }
         }
 
+        private static bool IsAlive(UnityEngine.Object o) { return o != null; }
+
+        private static void RescanCardTemplate()
+        {
+            try
+            {
+                try { Plugin.Logger.LogInfo("UIThemeCache: rescan for Container_Card due to missing/invalid template..."); } catch { }
+                CardTemplate = null; CloseTemplate = null; // clear cached pointers
+                _attempted = false; // allow EnsureLoaded to run scan body
+                EnsureLoaded();
+            }
+            catch { }
+        }
+
         public static bool EnsureLoaded()
         {
-            if (_attempted) return (CardTemplate != null) || (CardBG != null || CardNoise != null || CardPaper != null);
+            if (_attempted)
+            {
+                // If previously attempted, but the scene object got destroyed, rescan
+                if (!IsAlive(CardTemplate))
+                {
+                    RescanCardTemplate();
+                }
+                return (CardTemplate != null) || (CardBG != null || CardNoise != null || CardPaper != null);
+            }
             _attempted = true;
             try
             {
@@ -103,6 +128,15 @@ namespace BackInBusiness
                         }
                     }
                     catch { }
+
+                    // Also try to discover a nearby Close button once and cache it
+                    try
+                    {
+                        CloseTemplate = FindCloseButtonNearCardTemplate();
+                        if (CloseTemplate != null)
+                            Plugin.Logger.LogInfo($"UIThemeCache: Cached CloseTemplate at {GetPath(CloseTemplate)}");
+                    }
+                    catch { }
                 }
                 else
                 {
@@ -120,7 +154,12 @@ namespace BackInBusiness
         {
             try
             {
-                if (!EnsureLoaded() || CardTemplate == null) return null;
+                if (!EnsureLoaded() || !IsAlive(CardTemplate))
+                {
+                    // Try once more to recover the template
+                    RescanCardTemplate();
+                    if (!IsAlive(CardTemplate)) return null;
+                }
                 var inst = UnityEngine.Object.Instantiate(CardTemplate.gameObject);
                 inst.name = "Emp_Container_Card";
                 var rt = inst.GetComponent<RectTransform>();
@@ -154,6 +193,255 @@ namespace BackInBusiness
                 try { Plugin.Logger.LogWarning($"UIThemeCache.InstantiateCard error: {ex.Message}"); } catch { }
                 return null;
             }
+        }
+
+        // Locate the Detective's Notebook CloseButton in the active resources
+        public static Transform FindNotebookCloseButton()
+        {
+            try
+            {
+                var all = Resources.FindObjectsOfTypeAll<Transform>();
+                Transform best = null;
+                int bestScore = -1;
+                try { Plugin.Logger.LogInfo($"UIThemeCache: scanning for Detective Notebook CloseButton among {all.Length} transforms..."); } catch { }
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var t = all[i];
+                    if (t == null) continue;
+                    var tn = t.name ?? string.Empty;
+                    if (!NameLooksLikeClose(tn)) continue;
+
+                    // Check ancestry to match the provided path segments
+                    bool ok = false;
+                    int score = 0;
+                    if (string.Equals(tn, "CloseButton", StringComparison.Ordinal)) score += 2; else score += 1; // prefer exact name
+                    try
+                    {
+                        bool hasDetectiveNotebook = false, hasWindowCanvas = false, hasGameCanvas = false;
+                        int depth = 0; var p = t.parent;
+                        while (p != null && depth++ < 32)
+                        {
+                            string pn = p.name ?? string.Empty;
+                            string norm = pn.Replace("'", string.Empty).ToLowerInvariant();
+                            if (!hasDetectiveNotebook && (norm.IndexOf("detective", StringComparison.Ordinal) >= 0 && norm.IndexOf("notebook", StringComparison.Ordinal) >= 0)) hasDetectiveNotebook = true;
+                            if (!hasWindowCanvas && pn.IndexOf("WindowCanvas", StringComparison.OrdinalIgnoreCase) >= 0) hasWindowCanvas = true;
+                            if (!hasGameCanvas && pn.IndexOf("GameCanvas", StringComparison.OrdinalIgnoreCase) >= 0) hasGameCanvas = true;
+                            p = p.parent;
+                        }
+                        // Prefer exact hierarchy but don't require all; compute a score
+                        if (hasDetectiveNotebook) score += 3;
+                        if (hasWindowCanvas) score += 1;
+                        if (hasGameCanvas) score += 1;
+                        ok = hasDetectiveNotebook || (hasWindowCanvas && hasGameCanvas);
+                    }
+                    catch { }
+
+                    if (ok)
+                    {
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            best = t;
+                        }
+                    }
+                }
+                if (best != null)
+                {
+                    try { Plugin.Logger.LogInfo($"UIThemeCache: Found CloseButton at {GetPath(best)} (score={bestScore})"); } catch { }
+                    return best;
+                }
+                else
+                {
+                    try { Plugin.Logger.LogWarning("UIThemeCache: Detective Notebook CloseButton not found; will use fallback."); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.FindNotebookCloseButton error: {ex.Message}"); } catch { }
+            }
+            return null;
+        }
+
+        // Instantiate the Detective's Notebook CloseButton and sanitize it for our UI (strip nested canvases/raycasters)
+        public static GameObject InstantiateCloseButton(Transform parent)
+        {
+            try
+            {
+                // Prefer cached CloseTemplate if available and alive
+                Transform tmpl = null;
+                if (CloseTemplate != null)
+                {
+                    try
+                    {
+                        // Accessing name will throw if destroyed
+                        var _ = CloseTemplate.name;
+                        tmpl = CloseTemplate;
+                        Plugin.Logger.LogInfo($"UIThemeCache: Using cached CloseTemplate at {GetPath(CloseTemplate)}");
+                    }
+                    catch { tmpl = null; }
+                }
+                if (tmpl == null)
+                {
+                    // Re-discover near the card template
+                    tmpl = FindCloseButtonNearCardTemplate();
+                    if (tmpl != null) CloseTemplate = tmpl;
+                }
+                if (tmpl == null)
+                {
+                    // As a last resort, try notebook path. If still not found, we return null so caller uses simple 'X'
+                    tmpl = FindNotebookCloseButton();
+                }
+                if (tmpl == null) return null;
+                // Build a fresh, clean button and copy only sprite visuals from the template to avoid any game logic side-effects
+                var go = UniverseLib.UI.UIFactory.CreateUIObject("Emp_CloseButton", parent.gameObject);
+                var rt = go.GetComponent<RectTransform>();
+                if (rt == null) rt = go.AddComponent<RectTransform>();
+                rt.SetParent(parent, false);
+                // Add Image and Button
+                var img = go.GetComponent<Image>();
+                if (img == null) img = go.AddComponent<Image>();
+                var btn = go.GetComponent<Button>();
+                if (btn == null) btn = go.AddComponent<Button>();
+                // Disable default transition, our adapter drives visuals to mirror the game's behavior
+                try { btn.transition = Selectable.Transition.None; } catch { }
+                // Copy sprite from template's first Image we can find
+                try
+                {
+                    Image src = tmpl.GetComponent<Image>();
+                    if (src == null) src = tmpl.GetComponentInChildren<Image>(true);
+                    if (src != null)
+                    {
+                        img.sprite = src.sprite;
+                        img.type = src.type;
+                        img.pixelsPerUnitMultiplier = src.pixelsPerUnitMultiplier;
+                        img.material = src.material;
+                        img.color = new Color(src.color.r, src.color.g, src.color.b, 1f);
+                        img.raycastTarget = true;
+                    }
+                }
+                catch { }
+                // Ensure active
+                try { go.SetActive(true); } catch { }
+                try { Plugin.Logger.LogInfo("UIThemeCache: Instantiated clean CloseButton (copied sprite only)."); } catch { }
+                return go;
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.InstantiateCloseButton error: {ex.Message}"); } catch { }
+                return null;
+            }
+        }
+
+        // Heuristic to decide if a name looks like a close/exit button
+        private static bool NameLooksLikeClose(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            string s = name.ToLowerInvariant().Replace(" ", "").Replace("_", "").Replace("-", "");
+            if (s.Contains("close")) return true;
+            if (s.Contains("exit")) return true;
+            if (s == "x" || s == "btnx" || s.Contains("iconx")) return true;
+            if (s.Contains("btnclose") || s.Contains("closebtn")) return true;
+            return false;
+        }
+
+        // Search around the discovered CardTemplate (e.g., under InfoWindow) for a close-like button
+        public static Transform FindCloseButtonNearCardTemplate()
+        {
+            try
+            {
+                if (!EnsureLoaded() || CardTemplate == null) return null;
+                // Search siblings and ancestors up to a limited depth
+                Transform scope = CardTemplate.parent != null ? CardTemplate.parent : CardTemplate;
+                Transform best = null; int bestScore = -1;
+                // Breadth-first over descendants of the scope
+                var queue = new System.Collections.Generic.Queue<Transform>();
+                queue.Enqueue(scope);
+                int visited = 0;
+                while (queue.Count > 0 && visited < 5000)
+                {
+                    var t = queue.Dequeue(); visited++;
+                    if (t == null) continue;
+                    var tn = t.name ?? string.Empty;
+                    if (NameLooksLikeClose(tn))
+                    {
+                        int score = 0;
+                        if (t.GetComponent<Button>() != null) score += 3;
+                        if (t.GetComponent<Image>() != null) score += 1;
+                        // Prefer immediate siblings of CardTemplate
+                        if (t.parent == scope) score += 2;
+                        if (score > bestScore) { bestScore = score; best = t; }
+                    }
+                    // enqueue children
+                    for (int i = 0; i < t.childCount; i++) queue.Enqueue(t.GetChild(i));
+                }
+                if (best != null)
+                {
+                    try { Plugin.Logger.LogInfo($"UIThemeCache: Found CloseButton near CardTemplate at {GetPath(best)} (score={bestScore})"); } catch { }
+                    return best;
+                }
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.FindCloseButtonNearCardTemplate error: {ex.Message}"); } catch { }
+            }
+            return null;
+        }
+
+        // Broader fallback: find any reasonable Close button in the scene/resources
+        public static Transform FindAnyCloseButtonCandidate()
+        {
+            try
+            {
+                var all = Resources.FindObjectsOfTypeAll<Transform>();
+                Transform best = null; int bestScore = -1; int considered = 0;
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var t = all[i]; if (t == null) continue;
+                    var tn = t.name ?? string.Empty;
+                    if (!NameLooksLikeClose(tn)) continue;
+                    // Skip our own instances
+                    var tnl = tn.ToLowerInvariant();
+                    if (tn == "Emp_CloseButton" || tnl.Contains("emp_")) continue;
+
+                    // Score by ancestry and component presence
+                    int score = 0; considered++;
+                    try
+                    {
+                        if (t.GetComponent<Button>() != null) score += 3; // prefer real buttons
+                        if (t.GetComponent<Image>() != null) score += 1;
+                        int depth = 0; var p = t.parent;
+                        while (p != null && depth++ < 32)
+                        {
+                            var pn = p.name ?? string.Empty; var pnl = pn.ToLowerInvariant();
+                            if (pnl.Contains("infowindow")) score += 3; // we know card came from here
+                            if (pnl.Contains("detective") && pnl.Contains("notebook")) score += 2;
+                            if (pnl.Contains("windowcanvas")) score += 1;
+                            if (pnl.Contains("gamecanvas")) score += 1;
+                            p = p.parent;
+                        }
+                    }
+                    catch { }
+
+                    if (score > bestScore)
+                    {
+                        bestScore = score; best = t;
+                    }
+                }
+                if (best != null)
+                {
+                    try { Plugin.Logger.LogInfo($"UIThemeCache: Fallback found a close-like candidate at {GetPath(best)} (score={bestScore}, considered={considered})"); } catch { }
+                    return best;
+                }
+                else
+                {
+                    try { Plugin.Logger.LogWarning("UIThemeCache: No close-like candidate found in fallback search."); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.FindAnyCloseButtonCandidate error: {ex.Message}"); } catch { }
+            }
+            return null;
         }
     }
 
@@ -252,29 +540,140 @@ namespace BackInBusiness
             salaryText.color = Color.black;
             try { salaryText.transform.SetParent(cardRoot.transform, false); salaryText.transform.SetAsLastSibling(); } catch { }
 
-            // Close button inside the view (top-right of content area)
-            var closeRef = UIFactory.CreateButton(root, "Emp_Close", "X");
-            closeRef.ButtonText.fontSize = 22;
-            closeRef.ButtonText.color = Color.black;
-            closeRef.ButtonText.fontStyle = FontStyle.Bold;
-            var closeRt = closeRef.Component.GetComponent<RectTransform>();
-            closeRt.anchorMin = new Vector2(1f, 1f);
-            closeRt.anchorMax = new Vector2(1f, 1f);
-            closeRt.pivot = new Vector2(1f, 1f);
-            // Make the button background invisible (keep text visible and clickable)
+            // Close button: clone the game's Detective's Notebook CloseButton and wire it
+            RectTransform closeRt = null;
             try
             {
-                var img = closeRef.Component.GetComponent<Image>();
-                if (img != null)
+                Plugin.Logger.LogInfo("EmployeeDetailsView: Attempting to instantiate Detective Notebook CloseButton...");
+                var closeGo = UIThemeCache.InstantiateCloseButton(root.transform);
+                if (closeGo != null)
                 {
-                    var c = img.color; c.a = 0f; img.color = c;
+                    closeRt = closeGo.GetComponent<RectTransform>();
+                    closeRt.anchorMin = new Vector2(1f, 1f);
+                    closeRt.anchorMax = new Vector2(1f, 1f);
+                    closeRt.pivot = new Vector2(1f, 1f);
+                    closeRt.anchoredPosition = new Vector2(-10f, -10f);
+                    closeRt.sizeDelta = new Vector2(35f, 35f);
+                    try { closeRt.transform.SetAsLastSibling(); } catch { }
+
+                    var btn = closeGo.GetComponent<Button>();
+                    if (btn == null) btn = closeGo.AddComponent<Button>();
+                    // Remove any existing listeners from the source prefab to avoid invoking unrelated game logic
+                    try { btn.onClick.RemoveAllListeners(); } catch { }
+                    // Wire our close action
+                    try { btn.onClick.AddListener(() => { try { CloseRequested?.Invoke(); } catch { } }); } catch { }
+                    // Disable navigation to prevent focus side-effects interfering with pointer events
+                    try { var nav = btn.navigation; nav.mode = Navigation.Mode.None; btn.navigation = nav; } catch { }
+                    // Use BIBButtonController (mirror of game's ButtonController visuals) and pointer events
+                    try
+                    {
+                        var controller = closeGo.GetComponent<BIBButtonController>();
+                        if (controller == null) controller = closeGo.AddComponent<BIBButtonController>();
+                        // Configure: clone game's AdditionalHighlight as a child now (disabled), show only on hover
+                        try
+                        {
+                            controller.UseCloneHighlight = true;
+                            controller.UseAdditionalHighlight = true;
+                            controller.AdditionalHighlightAtFront = true;
+                            controller.AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
+                        }
+                        catch { }
+                        if (controller.TargetImage == null)
+                        {
+                            var imgSelf = closeGo.GetComponent<Image>();
+                            if (imgSelf != null) controller.TargetImage = imgSelf;
+                            else { var imgChild = closeGo.GetComponentInChildren<Image>(true); if (imgChild != null) controller.TargetImage = imgChild; }
+                        }
+                        if (controller.TargetTransform == null)
+                        {
+                            controller.TargetTransform = closeGo.GetComponent<RectTransform>();
+                        }
+                        // Make sure Unity's own transition doesn't interfere
+                        try { btn.transition = Selectable.Transition.None; } catch { }
+                        var et = closeGo.GetComponent<EventTrigger>();
+                        if (et == null) et = closeGo.AddComponent<EventTrigger>();
+                        if (et.triggers == null)
+                        {
+                            et.triggers = new Il2CppSystem.Collections.Generic.List<EventTrigger.Entry>();
+                        }
+                        else et.triggers.Clear();
+
+                        EventTrigger.Entry mk(EventTriggerType t)
+                        {
+                            var e = new EventTrigger.Entry { eventID = t };
+                            e.callback = new EventTrigger.TriggerEvent();
+                            return e;
+                        }
+
+                        // PointerEnter
+                        try
+                        {
+                            var e = mk(EventTriggerType.PointerEnter);
+                            e.callback.AddListener((ev) => { try { controller.OnPointerEnter(ev as UnityEngine.EventSystems.PointerEventData); } catch { } });
+                            et.triggers.Add(e);
+                        }
+                        catch { }
+                        // PointerExit
+                        try
+                        {
+                            var e = mk(EventTriggerType.PointerExit);
+                            e.callback.AddListener((ev) => { try { controller.OnPointerExit(ev as UnityEngine.EventSystems.PointerEventData); } catch { } });
+                            et.triggers.Add(e);
+                        }
+                        catch { }
+                        // PointerDown
+                        try
+                        {
+                            var e = mk(EventTriggerType.PointerDown);
+                            e.callback.AddListener((ev) => { try { controller.OnPointerDown(ev as UnityEngine.EventSystems.PointerEventData); } catch { } });
+                            et.triggers.Add(e);
+                        }
+                        catch { }
+                        // PointerUp
+                        try
+                        {
+                            var e = mk(EventTriggerType.PointerUp);
+                            e.callback.AddListener((ev) => { try { controller.OnPointerUp(ev as UnityEngine.EventSystems.PointerEventData); } catch { } });
+                            et.triggers.Add(e);
+                        }
+                        catch { }
+                        // PointerClick (for optional nudge feedback)
+                        try
+                        {
+                            var e = mk(EventTriggerType.PointerClick);
+                            e.callback.AddListener((ev) => { try { controller.OnPointerClick(ev as UnityEngine.EventSystems.PointerEventData); } catch { } });
+                            et.triggers.Add(e);
+                        }
+                        catch { }
+                    }
+                    catch { }
+
+                    // Ensure visible and clickable
+                    try { var img = closeGo.GetComponent<Image>(); if (img != null) { img.color = new Color(img.color.r, img.color.g, img.color.b, 1f); img.raycastTarget = true; } } catch { }
+                    try { Plugin.Logger.LogInfo("EmployeeDetailsView: Cloned CloseButton and wired click handler."); } catch { }
+                }
+                else
+                {
+                    Plugin.Logger.LogWarning("EmployeeDetailsView: CloseButton template not found, using fallback 'X' button.");
+                    var closeRef = UIFactory.CreateButton(root, "Emp_Close", "X");
+                    closeRef.ButtonText.fontSize = 22;
+                    closeRef.ButtonText.color = Color.black;
+                    closeRef.ButtonText.fontStyle = FontStyle.Bold;
+                    closeRt = closeRef.Component.GetComponent<RectTransform>();
+                    closeRt.anchorMin = new Vector2(1f, 1f);
+                    closeRt.anchorMax = new Vector2(1f, 1f);
+                    closeRt.pivot = new Vector2(1f, 1f);
+                    try { var img = closeRef.Component.GetComponent<Image>(); if (img != null) { var c = img.color; c.a = 0f; img.color = c; } } catch { }
+                    closeRt.anchoredPosition = new Vector2(-10f, -10f);
+                    closeRt.sizeDelta = new Vector2(35f, 35f);
+                    try { closeRef.Component.transform.SetAsLastSibling(); } catch { }
+                    closeRef.OnClick += () => { try { CloseRequested?.Invoke(); } catch { } };
                 }
             }
-            catch { }
-            closeRt.anchoredPosition = new Vector2(-10f, -10f);
-            closeRt.sizeDelta = new Vector2(35f, 35f);
-            try { closeRef.Component.transform.SetAsLastSibling(); } catch { }
-            closeRef.OnClick += () => { try { CloseRequested?.Invoke(); } catch { } };
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"EmployeeDetailsView: error constructing CloseButton: {ex.Message}"); } catch { }
+            }
 
             // Background and themed layers (Card BG / Paper / Noise) only if cloning failed
             if (clonedCard == null)
