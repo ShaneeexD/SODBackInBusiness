@@ -355,12 +355,17 @@ namespace BackInBusiness
             btnRt.anchorMax = new Vector2(0.98f, 0.16f);
             btnRt.offsetMin = Vector2.zero;
             btnRt.offsetMax = Vector2.zero;
-            try { btnRow.transform.SetAsLastSibling(); } catch { }
+            // Make the button bar container fully transparent (remove grey background), not the buttons themselves
+            try { var bg = btnRow.GetComponent<Image>(); if (bg != null) { var c = bg.color; c.a = 0f; bg.color = c; bg.raycastTarget = false; } } catch { }
+            // Parent under the card root so it clips and layers correctly with the themed background
+            try { btnRow.transform.SetParent(cardRoot.transform, false); btnRow.transform.SetAsLastSibling(); } catch { }
 
             changeRoleButton = UIFactory.CreateButton(btnRow, "Emp_ChangeRole", "Change Role");
             changeRoleButton.ButtonText.fontSize = 14;
+            // Brownish-orange theme on button background; keep text readable
             changeRoleButton.ButtonText.color = Color.white;
-            SetupButton(changeRoleButton, new Color(0.2f, 0.6f, 0.9f, 1f));
+            changeRoleButton.ButtonText.fontStyle = FontStyle.Bold;
+            SetupButton(changeRoleButton, new Color(0.72f, 0.42f, 0.18f, 1f));
             try { var leCR = changeRoleButton.Component.gameObject.GetComponent<LayoutElement>() ?? changeRoleButton.Component.gameObject.AddComponent<LayoutElement>(); leCR.preferredWidth = 180f; leCR.minHeight = 36f; } catch { }
             changeRoleButton.OnClick += () =>
             {
@@ -369,8 +374,10 @@ namespace BackInBusiness
 
             fireButton = UIFactory.CreateButton(btnRow, "Emp_Fire", "Fire");
             fireButton.ButtonText.fontSize = 14;
+            // Brownish-orange theme on button background; keep text readable
             fireButton.ButtonText.color = Color.white;
-            SetupButton(fireButton, new Color(0.8f, 0.2f, 0.2f, 1f));
+            fireButton.ButtonText.fontStyle = FontStyle.Bold;
+            SetupButton(fireButton, new Color(0.66f, 0.34f, 0.12f, 1f));
             try { var leF = fireButton.Component.gameObject.GetComponent<LayoutElement>() ?? fireButton.Component.gameObject.AddComponent<LayoutElement>(); leF.preferredWidth = 140f; leF.minHeight = 36f; } catch { }
             fireButton.OnClick += () =>
             {

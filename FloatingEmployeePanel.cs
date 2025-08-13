@@ -55,8 +55,12 @@ namespace BackInBusiness
             float topStart = 0.95f - (index * 0.38f);
             float bottom = topStart - 0.35f;
             if (bottom < 0.06f) { bottom = 0.06f; topStart = bottom + 0.35f; }
-            _anchorMin = new Vector2(0.60f, bottom);
-            _anchorMax = new Vector2(0.98f, topStart);
+            // Default: start thinner by reducing the horizontal span (right-aligned)
+            // e.g., 20% width anchored to the right edge
+            float right = 0.98f;
+            float widthFrac = 0.35f; // tweak as desired for a thinner default
+            _anchorMax = new Vector2(right, topStart);
+            _anchorMin = new Vector2(Mathf.Clamp01(right - widthFrac), bottom);
         }
 
         // Backwards-compat constructor; will still rely on PendingInits for actual build
