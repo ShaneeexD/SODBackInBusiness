@@ -6,6 +6,7 @@ using UnityEngine.EventSystems;
 using UniverseLib;
 using UniverseLib.UI;
 using UniverseLib.UI.Models;
+using UniverseLib.UI.Panels; // For PanelBase detection to constrain dragging to our floating panel
 using SOD.Common;
 using Il2CppInterop.Runtime;
 using TMPro; // Added for TextMeshPro support
@@ -449,6 +450,7 @@ namespace BackInBusiness
     internal class EmployeeDetailsView
     {
         private GameObject root;
+        private RectTransform hostPanelRect; // the outer panel we want to move/bring to front
         private RawImage portrait;
         private Text nameText;
         private TextMeshProUGUI jobText; // Changed to TextMeshProUGUI
@@ -456,6 +458,58 @@ namespace BackInBusiness
         private ButtonRef fireButton;
         private ButtonRef changeRoleButton;
         public event Action CloseRequested;
+
+        // Resolve the RectTransform we want to move when dragging: ONLY accept FloatingEmployeePanel (PanelBase),
+        // to ensure we don't move other UI elements like the business menu
+        // Helper method to get the full path of a GameObject in the hierarchy for debugging
+        private string GetGameObjectPath(GameObject obj)
+        {
+            if (obj == null) return "null";
+            
+            string path = obj.name;
+            Transform parent = obj.transform.parent;
+            
+            while (parent != null)
+            {
+                path = parent.name + "/" + path;
+                parent = parent.parent;
+            }
+            
+            return path;
+        }
+        
+        private RectTransform ResolveHostPanelRect(Transform start)
+        {
+            if (start == null) return null;
+            
+            // First try to find our direct parent FloatingEmployeePanel
+            Transform t = start;
+            int guard = 0;
+            while (t != null && guard++ < 32)
+            {
+                try
+                {
+                    // Specifically look for FloatingEmployeePanel or PanelBase
+                    var pb = t.GetComponent<PanelBase>();
+                    if (pb != null)
+                    {
+                        // Found our FloatingEmployeePanel - this is what we want to drag
+                        Plugin.Logger.LogInfo($"EmployeeDetailsView: Found PanelBase to use as drag target: {t.name}");
+                        var prt = t.GetComponent<RectTransform>();
+                        if (prt != null) return prt;
+                    }
+                }
+                catch { }
+
+                // Move up the hierarchy
+                if (t.parent == null) break;
+                t = t.parent;
+            }
+            
+            // If we couldn't find a PanelBase, return null to prevent dragging
+            // This is safer than returning another rect that might be the business menu
+            return null;
+        }
 
         // Helper method to create TextMeshProUGUI components with the game's font
         private TextMeshProUGUI CreateTMP(GameObject parent, string name, string text, TextAlignmentOptions alignment)
@@ -507,6 +561,25 @@ namespace BackInBusiness
         public void Build(GameObject parent)
         {
             Plugin.Logger.LogInfo("EmployeeDetailsView.Build start");
+            // Resolve the top-level panel/container (child of Canvas) so dragging moves the entire window
+            hostPanelRect = ResolveHostPanelRect(parent != null ? parent.transform : null);
+            // Make the host panel visually invisible (hide default chrome) if it has a background Image
+            try
+            {
+                if (hostPanelRect != null)
+                {
+                    // If a layout group controls this panel, opt out so dragging isn't overridden
+                    var le = hostPanelRect.GetComponent<LayoutElement>();
+                    if (le != null) le.ignoreLayout = true;
+
+                    var hostImg = hostPanelRect.GetComponent<Image>();
+                    if (hostImg != null)
+                    {
+                        var c = hostImg.color; c.a = 0f; hostImg.color = c; hostImg.raycastTarget = false;
+                    }
+                }
+            }
+            catch { }
             // Root container
             root = UIFactory.CreateUIObject("EmployeeDetails", parent);
             // RectTransform is already added by UIFactory; just fetch it
@@ -542,8 +615,60 @@ namespace BackInBusiness
             // Mask pattern as child of background (above background image)
             GameObject maskPattern = NotebookThemeHelper.InstantiateMaskPattern(background != null ? background.transform : cardRoot.transform);
             if (maskPattern != null) {
-                try { maskPattern.transform.SetAsFirstSibling(); } catch { }
-                try { Plugin.Logger.LogInfo("EmployeeDetailsView: Added Detective's Notebook MaskPattern to background"); } catch { }
+                try { 
+                    // Set mask pattern to be visible above background but below card content
+                    maskPattern.transform.SetSiblingIndex(background != null ? 1 : 0); 
+                    
+                    // Ensure the mask pattern is properly sized to show its border
+                    var maskRt = maskPattern.GetComponent<RectTransform>();
+                    if (maskRt != null) {
+                        // Make the mask pattern fill the entire parent
+                        maskRt.anchorMin = Vector2.zero;
+                        maskRt.anchorMax = Vector2.one;
+                        maskRt.offsetMin = Vector2.zero;
+                        maskRt.offsetMax = Vector2.zero;
+                        
+                        // Find the RoundedBorder child and ensure it's visible with proper insets
+                        var roundedBorder = maskPattern.transform.Find("RoundedBorder");
+                        if (roundedBorder != null) {
+                            var borderRt = roundedBorder.GetComponent<RectTransform>();
+                            if (borderRt != null) {
+                                // Use larger insets to match the game's notebook border
+                                borderRt.anchorMin = Vector2.zero;
+                                borderRt.anchorMax = Vector2.one;
+                                // These insets match what we see in the game's notebook
+                                borderRt.offsetMin = new Vector2(8f, 8f);
+                                borderRt.offsetMax = new Vector2(-8f, -8f);
+                                
+                                // Get the Image component and ensure it has the right settings
+                                var borderImg = roundedBorder.GetComponent<Image>();
+                                if (borderImg != null) {
+                                    // Make sure we're using sliced type for proper corners
+                                    borderImg.type = Image.Type.Sliced;
+                                    // Use a color similar to the Detective's Notebook paper edge
+                                    borderImg.color = new Color(0.45f, 0.4f, 0.35f, 1f);
+                                }
+                            }
+                        }
+                        
+                        // Find the DarkBackground child and ensure it's properly sized
+                        var darkBg = maskPattern.transform.Find("DarkBackground");
+                        if (darkBg != null) {
+                            var darkBgRt = darkBg.GetComponent<RectTransform>();
+                            if (darkBgRt != null) {
+                                darkBgRt.anchorMin = Vector2.zero;
+                                darkBgRt.anchorMax = Vector2.one;
+                                // Inset the dark background to sit just inside the border
+                                darkBgRt.offsetMin = new Vector2(4f, 4f);
+                                darkBgRt.offsetMax = new Vector2(-4f, -4f);
+                            }
+                        }
+                    }
+                    
+                    Plugin.Logger.LogInfo("EmployeeDetailsView: Added and adjusted Detective's Notebook MaskPattern to show border"); 
+                } catch (Exception ex) { 
+                    Plugin.Logger.LogError($"Error adjusting mask pattern: {ex.Message}");
+                }
             }
 
             // Clone the actual game's Container_Card under the background; background acts as parent container
@@ -553,6 +678,10 @@ namespace BackInBusiness
                 // ensure it sits above mask but below other content we add later
                 try { clonedCard.transform.SetSiblingIndex(1); } catch { }
                 
+                // We'll capture a reference to the Detective's Notebook contents page so we can anchor our UI to it
+                GameObject contentsPage = null;
+                RectTransform contentsRect = null;
+                
                 // Find Container_Paper within the cloned card to add the ContentsPage
                 try
                 {
@@ -561,7 +690,11 @@ namespace BackInBusiness
                     {
                         // Add ContentsPage as a sibling of Container_Paper, not a child
                         // This ensures it draws over the Container_Paper but under other content
-                        GameObject contentsPage = NotebookThemeHelper.InstantiateContentsPage(clonedCard.transform);
+                        contentsPage = NotebookThemeHelper.InstantiateContentsPage(clonedCard.transform);
+                        
+                        // Log the name of the created contents page for debugging
+                        Plugin.Logger?.LogInfo($"EmployeeDetailsView: Created contents page with name: {contentsPage?.name}");
+                        
                         if (contentsPage != null)
                         {
                             // Position it just above Container_Paper in the hierarchy
@@ -571,16 +704,22 @@ namespace BackInBusiness
                             
                             // Match the ContentsPage size to Container_Paper
                             RectTransform paperRect = containerPaper.GetComponent<RectTransform>();
-                            RectTransform contentsRect = contentsPage.GetComponent<RectTransform>();
+                            contentsRect = contentsPage.GetComponent<RectTransform>();
                             if (paperRect != null && contentsRect != null)
                             {
                                 contentsRect.anchorMin = paperRect.anchorMin;
                                 contentsRect.anchorMax = paperRect.anchorMax;
-                                // Make it slightly smaller than Container_Paper
-                                contentsRect.offsetMin = new Vector2(paperRect.offsetMin.x + 5f, paperRect.offsetMin.y + 5f);
-                                contentsRect.offsetMax = new Vector2(paperRect.offsetMax.x - 5f, paperRect.offsetMax.y - 5f);
+                                // Make it slightly smaller than Container_Paper but large enough to show the border properly
+                                // These offsets ensure the contents page fits within the mask pattern's border
+                                contentsRect.offsetMin = new Vector2(paperRect.offsetMin.x + 12f, paperRect.offsetMin.y + 12f);
+                                contentsRect.offsetMax = new Vector2(paperRect.offsetMax.x - 12f, paperRect.offsetMax.y - 12f);
+                                
+                                // Log the size for debugging
+                                Plugin.Logger?.LogInfo($"ContentsPage size: {contentsRect.rect.width} x {contentsRect.rect.height}");
                             }
                             
+                            // Store a direct reference to the BIB_ContentsPage GameObject for proper parenting
+                            // This is the actual GameObject with the Image component that we need to parent to
                             Plugin.Logger?.LogInfo("EmployeeDetailsView: Added Detective's Notebook ContentsPage over Container_Paper");
                         }
                         else
@@ -597,79 +736,193 @@ namespace BackInBusiness
                 {
                     Plugin.Logger?.LogError($"Error adding ContentsPage: {ex.Message}");
                 }
-            }
+                
+                // Determine scaling against a reference width so UI looks consistent across resolutions
+                float pageScale = 1f;
+                try
+                {
+                    if (contentsRect != null)
+                    {
+                        // Force layout recalculation to ensure we have valid rect dimensions
+                        LayoutRebuilder.ForceRebuildLayoutImmediate(contentsRect);
+                        
+                        float width = contentsRect.rect.width;
+                        if (width <= 0f)
+                        {
+                            // Fallback: query Container_Paper's rect width and subtract our insets
+                            var containerPaper2 = clonedCard.transform.Find("Container_Paper");
+                            var paperRect2 = containerPaper2 != null ? containerPaper2.GetComponent<RectTransform>() : null;
+                            if (paperRect2 != null)
+                            {
+                                LayoutRebuilder.ForceRebuildLayoutImmediate(paperRect2);
+                                width = paperRect2.rect.width - 10f; // account for 5px inset per side
+                            }
+                        }
+                        if (width > 1f)
+                            pageScale = width / 450f; // 450 is our reference page width in InstantiateContentsPage()
+                        
+                        Plugin.Logger.LogInfo($"EmployeeDetailsView: Using pageScale={pageScale} (contentsRect width={width})");
+                    }
+                }
+                catch (Exception ex) 
+                { 
+                    Plugin.Logger.LogWarning($"Error calculating pageScale: {ex.Message}");
+                }
 
+                // ---------------------
+                // Find the BIB_ContentsPage GameObject which has the Image component
+                GameObject bibContentsPage = clonedCard.transform.Find("BIB_ContentsPage")?.gameObject;
+                if (bibContentsPage == null)
+                {
+                    Plugin.Logger.LogError("EmployeeDetailsView: Could not find BIB_ContentsPage GameObject for parenting UI elements");
+                    bibContentsPage = contentsPage; // Fallback to the contentsPage variable
+                }
+                else
+                {
+                    Plugin.Logger.LogInfo($"EmployeeDetailsView: Found BIB_ContentsPage GameObject: {bibContentsPage.name}");
+                }
+                
+                // Portrait border anchored to BIB_ContentsPage (the actual GameObject with Image component)
+                var portraitBorderGO = UIFactory.CreateUIObject("Emp_PortraitBorder", bibContentsPage);
+                var borderImage = portraitBorderGO.AddComponent<Image>();
+                borderImage.color = Color.gray;
+                var borderRt = portraitBorderGO.GetComponent<RectTransform>();
+                // Position in the top-left of the contents page
+                borderRt.anchorMin = new Vector2(0f, 1f);
+                borderRt.anchorMax = new Vector2(0f, 1f);
+                borderRt.pivot = new Vector2(0f, 1f);
+                borderRt.anchoredPosition = new Vector2(60f - 5f, -45f + 5f);
+                // Make the border slightly larger than the portrait (5px on each side)
+                borderRt.sizeDelta = new Vector2(138f, 138f);
+                
+                // Log the hierarchy path for debugging
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Portrait border created with path: {GetGameObjectPath(portraitBorderGO)}");
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Portrait border parent is: {portraitBorderGO.transform.parent?.name ?? "null"}");
+                
+                // Make sure it's at the front visually
+                try { portraitBorderGO.transform.SetAsFirstSibling(); } catch { }
+
+                // ---------------------
+                // Portrait anchored to BIB_ContentsPage (the actual GameObject with Image component)
+                var portraitGO = UIFactory.CreateUIObject("Emp_Portrait", bibContentsPage);
+                portrait = portraitGO.AddComponent<RawImage>();
+                var pRt = portraitGO.GetComponent<RectTransform>();
+                pRt.anchorMin = new Vector2(0f, 1f);
+                pRt.anchorMax = new Vector2(0f, 1f);
+                pRt.pivot = new Vector2(0f, 1f);
+                // Center the portrait on the border
+                pRt.anchoredPosition = new Vector2(60f, -45f);
+                pRt.sizeDelta = new Vector2(128f, 128f);
+                
+                // Log the hierarchy path for debugging
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Portrait created with path: {GetGameObjectPath(portraitGO)}");
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Portrait parent is: {portraitGO.transform.parent?.name ?? "null"}");
+                
+                // Make sure it's at the right position in sibling order
+                try { portraitGO.transform.SetSiblingIndex(2); } catch { }
+
+                // ---------------------
+                // Job title anchored to BIB_ContentsPage (the actual GameObject with Image component)
+                jobText = CreateTMP(bibContentsPage, "Emp_Job", "Job", TextAlignmentOptions.TopLeft);
+                var jobRt = jobText.GetComponent<RectTransform>();
+                jobRt.anchorMin = new Vector2(0f, 1f);
+                jobRt.anchorMax = new Vector2(0f, 1f);
+                jobRt.pivot = new Vector2(0f, 1f);
+                jobRt.anchoredPosition = new Vector2(80f + 128f + 12f, -30f - 40f);
+                jobRt.sizeDelta = new Vector2(380f, 22f);
+                jobText.fontSize = 14f;
+                jobText.color = Color.black;
+                
+                // Log the hierarchy path for debugging
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Job title created with path: {GetGameObjectPath(jobText.gameObject)}");
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Job title parent is: {jobText.transform.parent?.name ?? "null"}");
+                
+                // Make sure it's at the right position in sibling order
+                try { jobText.transform.SetAsLastSibling(); } catch { }
+
+                // ---------------------
+                // Salary anchored to BIB_ContentsPage (the actual GameObject with Image component)
+                salaryText = CreateTMP(bibContentsPage, "Emp_Salary", "Salary", TextAlignmentOptions.TopLeft);
+                var salRt = salaryText.GetComponent<RectTransform>();
+                salRt.anchorMin = new Vector2(0f, 1f);
+                salRt.anchorMax = new Vector2(0f, 1f);
+                salRt.pivot = new Vector2(0f, 1f);
+                salRt.anchoredPosition = new Vector2(80f + 128f + 12f, -30f - 40f - 24f);
+                salRt.sizeDelta = new Vector2(380f, 22f);
+                // Font size and color
+                salaryText.fontSize = 14f;
+                salaryText.color = Color.black;
+                
+                // Log the hierarchy path for debugging
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Salary created with path: {GetGameObjectPath(salaryText.gameObject)}");
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Salary parent is: {salaryText.transform.parent?.name ?? "null"}");
+                
+                // Make sure it's at the right position in sibling order
+                try { salaryText.transform.SetAsLastSibling(); } catch { }
+
+                // Title area remains parented to cardRoot so it can span full width for dragging and name label
+            }
+            
             // Remove RectMask2D from cardRoot to avoid clipping backgrounds
             try { var rm = cardRoot.GetComponent<RectMask2D>(); if (rm != null) UnityEngine.Object.Destroy(rm); } catch { }
-
-            // White border box for portrait
-            var portraitBorderGO = UIFactory.CreateUIObject("Emp_PortraitBorder", root);
-            var borderImage = portraitBorderGO.AddComponent<Image>();
-            borderImage.color = Color.gray;
-            var borderRt = portraitBorderGO.GetComponent<RectTransform>();
-            borderRt.anchorMin = new Vector2(0f, 1f);
-            borderRt.anchorMax = new Vector2(0f, 1f);
-            borderRt.pivot = new Vector2(0f, 1f);
-            borderRt.anchoredPosition = new Vector2(30f, -70f);
-            // Make the border slightly larger than the portrait (5px on each side)
-            borderRt.sizeDelta = new Vector2(138f, 138f);
-            try { portraitBorderGO.transform.SetParent(cardRoot.transform, false); portraitBorderGO.transform.SetSiblingIndex(1); } catch { }
             
-            // Portrait (bigger) - fixed to top-left
-            var portraitGO = UIFactory.CreateUIObject("Emp_Portrait", root);
-            portrait = portraitGO.AddComponent<RawImage>();
-            var pRt = portraitGO.GetComponent<RectTransform>();
-            pRt.anchorMin = new Vector2(0f, 1f);
-            pRt.anchorMax = new Vector2(0f, 1f);
-            pRt.pivot = new Vector2(0f, 1f);
-            // Center the portrait on the border
-            pRt.anchoredPosition = new Vector2(30f + 5f, -70f - 5f);
-            pRt.sizeDelta = new Vector2(128f, 128f);
-            // Parent inside the card and set to be above the border but below text
-            try { portraitGO.transform.SetParent(cardRoot.transform, false); portraitGO.transform.SetSiblingIndex(2); } catch { }
-
-            // Name - fixed offsets from top-left
-            nameText = UIFactory.CreateLabel(root, "Emp_Name", "Name", TextAnchor.UpperLeft);
+            
+            // Create a title area that will serve as both the name display and drag handle
+            GameObject titleArea = UIFactory.CreateUIObject("Emp_TitleArea", cardRoot);
+            var titleRt = titleArea.GetComponent<RectTransform>();
+            titleRt.anchorMin = new Vector2(0f, 1f);
+            titleRt.anchorMax = new Vector2(1f, 1f);
+            titleRt.pivot = new Vector2(0f, 1f);
+            titleRt.anchoredPosition = new Vector2(0f, 0f);
+            titleRt.sizeDelta = new Vector2(0f, 50f);
+            titleArea.transform.SetAsLastSibling();
+            
+            // Add the game's DragPanel component to enable dragging
+            var dragPanel = titleArea.AddComponent<DragPanel>();
+            // CRITICAL: Move ONLY the FloatingEmployeePanel when dragging, not any other UI elements
+            // If hostPanelRect is null, don't enable dragging at all to prevent moving other UI
+            dragPanel.parentRect = hostPanelRect; // Only use hostPanelRect, never fall back to root
+            dragPanel.draggableComponent = hostPanelRect != null; // Only enable dragging if we have a valid panel
+            
+            // Log the drag target for debugging
+            if (hostPanelRect != null)
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Drag will move panel: {(hostPanelRect.gameObject != null ? hostPanelRect.gameObject.name : "null")}");
+            else
+                Plugin.Logger.LogWarning("EmployeeDetailsView: No valid drag target found, dragging disabled");
+            
+            // Ensure the title area receives raycasts for triggers
+            var raycastImg = titleArea.AddComponent<Image>();
+            raycastImg.color = new Color(0, 0, 0, 0);
+            raycastImg.raycastTarget = true;
+            
+            // Also bring to front on pointer down
+            var eventTrigger = titleArea.AddComponent<EventTrigger>();
+            var entry = new EventTrigger.Entry { eventID = EventTriggerType.PointerDown };
+            entry.callback.AddListener((data) => { BringToFront(); });
+            eventTrigger.triggers.Add(entry);
+            // Bring to front when drag ends as well
+            var endEntry = new EventTrigger.Entry { eventID = EventTriggerType.EndDrag };
+            endEntry.callback.AddListener((data) => { BringToFront(); });
+            eventTrigger.triggers.Add(endEntry);
+            
+            // Name - fixed offsets from top-left, parented to the title area
+            nameText = UIFactory.CreateLabel(titleArea, "Emp_Name", "Name", TextAnchor.UpperLeft);
             var nameRt = nameText.GetComponent<RectTransform>();
-            nameRt.anchorMin = new Vector2(0f, 1f);
-            nameRt.anchorMax = new Vector2(0f, 1f);
+            nameRt.anchorMin = new Vector2(0f, 0f);
+            nameRt.anchorMax = new Vector2(1f, 1f);
             nameRt.pivot = new Vector2(0f, 1f);
-            nameRt.anchoredPosition = new Vector2(20f, -12f);
-            nameRt.sizeDelta = new Vector2(460f, 40f);
+            nameRt.anchoredPosition = new Vector2(50f, -10f);
+            nameRt.sizeDelta = new Vector2(-40f, 0f);
             nameText.fontSize = 32;
             nameText.fontStyle = FontStyle.Bold;
             nameText.color = Color.black;
             // Ensure text is not clipped and sits above background layers
             nameText.horizontalOverflow = HorizontalWrapMode.Overflow;
             nameText.verticalOverflow = VerticalWrapMode.Overflow;
-            // Parent under the card so it's clipped correctly and ordered above the paper
-            try { nameText.transform.SetParent(cardRoot.transform, false); nameText.transform.SetAsLastSibling(); } catch { }
 
-            // Job title - fixed below name
-            jobText = CreateTMP(root, "Emp_Job", "Job", TextAlignmentOptions.TopLeft);
-            var jobRt = jobText.GetComponent<RectTransform>();
-            jobRt.anchorMin = new Vector2(0f, 1f);
-            jobRt.anchorMax = new Vector2(0f, 1f);
-            jobRt.pivot = new Vector2(0f, 1f);
-            jobRt.anchoredPosition = new Vector2(40f + 128f + 12f, -30f - 40f);
-            jobRt.sizeDelta = new Vector2(380f, 22f);
-            // Font size and color
-            jobText.fontSize = 14;
-            jobText.color = Color.black;
-            try { jobText.transform.SetParent(cardRoot.transform, false); jobText.transform.SetAsLastSibling(); } catch { }
+            // Job title - fixed below name (parented to contents page earlier)
 
-            // Salary - fixed below job
-            salaryText = CreateTMP(root, "Emp_Salary", "Salary", TextAlignmentOptions.TopLeft);
-            var salRt = salaryText.GetComponent<RectTransform>();
-            salRt.anchorMin = new Vector2(0f, 1f);
-            salRt.anchorMax = new Vector2(0f, 1f);
-            salRt.pivot = new Vector2(0f, 1f);
-            salRt.anchoredPosition = new Vector2(40f + 128f + 12f, -30f - 40f - 24f);
-            salRt.sizeDelta = new Vector2(380f, 22f);
-            // Font size and color
-            salaryText.fontSize = 14;
-            salaryText.color = Color.black;
-            try { salaryText.transform.SetParent(cardRoot.transform, false); salaryText.transform.SetAsLastSibling(); } catch { }
+            // Salary - fixed below job (parented to contents page earlier)
 
             // Close button: clone the game's Detective's Notebook CloseButton and wire it
             RectTransform closeRt = null;
@@ -1139,9 +1392,10 @@ namespace BackInBusiness
         {
             try
             {
-                if (root == null) return;
-                var parentCanvas = root.GetComponentInParent<Canvas>();
-                var ownCanvas = root.GetComponent<Canvas>();
+                var hostGO = (hostPanelRect != null) ? hostPanelRect.gameObject : root;
+                if (hostGO == null) return;
+                var parentCanvas = hostGO.GetComponentInParent<Canvas>();
+                var ownCanvas = hostGO.GetComponent<Canvas>();
                 if (ownCanvas != null)
                 {
                     try
@@ -1155,22 +1409,41 @@ namespace BackInBusiness
                         ownCanvas.sortingOrder = desired;
                     }
                     catch { }
+                    
+                    // Play a subtle sound when bringing to front
+                    try { AudioController.Instance.Play2DSound(AudioControls.Instance.panelIconButton, null, 0.4f); } catch { }
                 }
-                root.transform.SetAsLastSibling();
-                try { Plugin.Logger.LogInfo("EmpDetails BringToFront done (sibling last)"); } catch { }
+                // Ensure whole host panel comes last
+                if (hostPanelRect != null) hostPanelRect.SetAsLastSibling(); else root.transform.SetAsLastSibling();
+                try { Plugin.Logger.LogInfo($"BringToFront: {hostGO.name} brought to front"); } catch { }
             }
             catch (Exception ex)
             {
-                Plugin.Logger.LogError($"BringToFront error: {ex.Message}");
+                try { Plugin.Logger.LogError($"BringToFront error: {ex.Message}"); } catch { }
             }
         }
-
+        
+        // Handler for DragPanel.OnDragEnd event
+        private void HandleDragEnd(GameObject dragObj, string tag)
+        {
+            try
+            {
+                // Bring window to front when drag ends
+                BringToFront();
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogError($"HandleDragEnd error: {ex.Message}"); } catch { }
+            }
+        }
+        
         public void Hide()
         {
             if (root != null)
                 root.SetActive(false);
         }
     }
+    
 }
 
 // Lightweight, IL2CPP-safe retry helper to fetch a citizen portrait shortly after the view appears.

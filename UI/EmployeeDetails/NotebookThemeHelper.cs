@@ -471,10 +471,10 @@ namespace BackInBusiness
                     var borderRt = borderFrame.AddComponent<RectTransform>();
                     borderRt.anchorMin = Vector2.zero;
                     borderRt.anchorMax = Vector2.one;
-                    // Make the border larger than the content to create a visible frame
-                    // Extend further at the top and bottom to ensure proper spacing
-                    borderRt.offsetMin = new Vector2(-8f, -8f); // Increased bottom and side margins
-                    borderRt.offsetMax = new Vector2(8f, 16f); // Increased top and side margins
+                    // Inset the border inside the parent to avoid being clipped by ancestor masks
+                    // Keep a consistent frame all around
+                    borderRt.offsetMin = new Vector2(8f, 8f);
+                    borderRt.offsetMax = new Vector2(-8f, -8f);
                     
                     // Add a custom border image with rounded corners
                     var borderImg = borderFrame.AddComponent<Image>();
@@ -498,9 +498,9 @@ namespace BackInBusiness
                     var darkBgRt = darkBg.AddComponent<RectTransform>();
                     darkBgRt.anchorMin = Vector2.zero;
                     darkBgRt.anchorMax = Vector2.one;
-                    // Extend the dark background to match the border but with a small margin
-                    darkBgRt.offsetMin = new Vector2(-4f, -4f);
-                    darkBgRt.offsetMax = new Vector2(4f, 12f); // Extra height at top with small margin
+                    // Inset the dark background to sit just inside the border
+                    darkBgRt.offsetMin = new Vector2(4f, 4f);
+                    darkBgRt.offsetMax = new Vector2(-4f, -4f);
                     
                     var darkBgImg = darkBg.AddComponent<Image>();
                     
