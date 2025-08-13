@@ -504,6 +504,51 @@ namespace BackInBusiness
             {
                 // ensure it sits above mask but below other content we add later
                 try { clonedCard.transform.SetSiblingIndex(1); } catch { }
+                
+                // Find Container_Paper within the cloned card to add the ContentsPage
+                try
+                {
+                    Transform containerPaper = clonedCard.transform.Find("Container_Paper");
+                    if (containerPaper != null)
+                    {
+                        // Add ContentsPage as a sibling of Container_Paper, not a child
+                        // This ensures it draws over the Container_Paper but under other content
+                        GameObject contentsPage = NotebookThemeHelper.InstantiateContentsPage(clonedCard.transform);
+                        if (contentsPage != null)
+                        {
+                            // Position it just above Container_Paper in the hierarchy
+                            // but below other content elements
+                            int paperIndex = containerPaper.GetSiblingIndex();
+                            contentsPage.transform.SetSiblingIndex(paperIndex + 1);
+                            
+                            // Match the ContentsPage size to Container_Paper
+                            RectTransform paperRect = containerPaper.GetComponent<RectTransform>();
+                            RectTransform contentsRect = contentsPage.GetComponent<RectTransform>();
+                            if (paperRect != null && contentsRect != null)
+                            {
+                                contentsRect.anchorMin = paperRect.anchorMin;
+                                contentsRect.anchorMax = paperRect.anchorMax;
+                                // Make it slightly smaller than Container_Paper
+                                contentsRect.offsetMin = new Vector2(paperRect.offsetMin.x + 5f, paperRect.offsetMin.y + 5f);
+                                contentsRect.offsetMax = new Vector2(paperRect.offsetMax.x - 5f, paperRect.offsetMax.y - 5f);
+                            }
+                            
+                            Plugin.Logger?.LogInfo("EmployeeDetailsView: Added Detective's Notebook ContentsPage over Container_Paper");
+                        }
+                        else
+                        {
+                            Plugin.Logger?.LogWarning("EmployeeDetailsView: Failed to instantiate ContentsPage");
+                        }
+                    }
+                    else
+                    {
+                        Plugin.Logger?.LogWarning("EmployeeDetailsView: Container_Paper not found in cloned card");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Logger?.LogError($"Error adding ContentsPage: {ex.Message}");
+                }
             }
 
             // Remove RectMask2D from cardRoot to avoid clipping backgrounds

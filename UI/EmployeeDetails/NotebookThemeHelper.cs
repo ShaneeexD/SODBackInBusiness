@@ -13,8 +13,10 @@ namespace BackInBusiness
         private static bool _attempted;
         public static Transform BackgroundTemplate; // The source Background to clone
         public static Transform MaskPatternTemplate; // The source MaskPattern to clone
+        public static Transform ContentsPageTemplate; // The source ContentsPage to clone
         public static Sprite BackgroundSprite;
         public static Sprite MaskPatternSprite;
+        public static Sprite ContentsPageSprite;
 
         private static string GetPath(Transform t)
         {
@@ -41,7 +43,11 @@ namespace BackInBusiness
             try
             {
                 try { Plugin.Logger.LogInfo("NotebookThemeHelper: rescan for Detective's Notebook UI elements due to missing/invalid templates..."); } catch { }
-                BackgroundTemplate = null; MaskPatternTemplate = null; // clear cached pointers
+                // Clear all cached pointers
+                BackgroundTemplate = null; 
+                MaskPatternTemplate = null; 
+                ContentsPageTemplate = null;
+                ContentsPageSprite = null;
                 _attempted = false; // allow EnsureLoaded to run scan body
                 EnsureLoaded();
             }
@@ -63,7 +69,16 @@ namespace BackInBusiness
             {
                 // Do not auto-rescan here to avoid repeated scan/log spam.
                 // Call RescanTemplates() explicitly if a refresh is required.
-                return (BackgroundTemplate != null && MaskPatternTemplate != null) || (BackgroundSprite != null && MaskPatternSprite != null);
+                bool hasBasicElements = (BackgroundTemplate != null && MaskPatternTemplate != null) || 
+                                       (BackgroundSprite != null && MaskPatternSprite != null);
+                
+                // Log ContentsPage status but don't affect the return value
+                if (ContentsPageTemplate == null && ContentsPageSprite == null)
+                {
+                    Plugin.Logger?.LogWarning("NotebookThemeHelper: ContentsPage template and sprite are both null");
+                }
+                
+                return hasBasicElements;
             }
             _attempted = true;
             try
@@ -104,10 +119,71 @@ namespace BackInBusiness
                         }
                         catch { }
                     }
+                    
+                    // Find ContentsPage in the Detective's Notebook
+                    try
+                    {
+                        // Path: GameCanvas/WindowCanvas/Detective's Notebook/Page/Scroll View/Viewport/History/ContentsPage
+                        var page = notebook.transform.Find("Page");
+                        if (page != null)
+                        {
+                            var scrollView = page.Find("Scroll View");
+                            if (scrollView != null)
+                            {
+                                var viewport = scrollView.Find("Viewport");
+                                if (viewport != null)
+                                {
+                                    var history = viewport.Find("History");
+                                    if (history != null)
+                                    {
+                                        var contentsPage = history.Find("ContentsPage");
+                                        if (contentsPage != null)
+                                        {
+                                            ContentsPageTemplate = contentsPage;
+                                            Plugin.Logger?.LogInfo($"NotebookThemeHelper: Found ContentsPage at {GetPath(contentsPage)}");
+                                            
+                                            // Extract sprite for manual fallback usage
+                                            try
+                                            {
+                                                var img = contentsPage.GetComponent<Image>();
+                                                if (img != null) ContentsPageSprite = img.sprite;
+                                                Plugin.Logger?.LogInfo($"NotebookThemeHelper: Extracted ContentsPage sprite: {(img != null ? (img.sprite != null ? img.sprite.name : "<null sprite>") : "<null image>")}.");
+                                            }
+                                            catch (Exception ex) { Plugin.Logger?.LogWarning($"Error extracting ContentsPage sprite: {ex.Message}"); }
+                                        }
+                                        else
+                                        {
+                                            Plugin.Logger?.LogWarning("NotebookThemeHelper: ContentsPage not found under History");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Plugin.Logger?.LogWarning("NotebookThemeHelper: History not found under Viewport");
+                                    }
+                                }
+                                else
+                                {
+                                    Plugin.Logger?.LogWarning("NotebookThemeHelper: Viewport not found under Scroll View");
+                                }
+                            }
+                            else
+                            {
+                                Plugin.Logger?.LogWarning("NotebookThemeHelper: Scroll View not found under Page");
+                            }
+                        }
+                        else
+                        {
+                            Plugin.Logger?.LogWarning("NotebookThemeHelper: Page not found under Detective's Notebook");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Logger?.LogWarning($"Error finding ContentsPage: {ex.Message}");
+                    }
                 }
                 
                 // If direct path failed, try scene search using heuristics similar to UIThemeCache
-                if (BackgroundTemplate == null || MaskPatternTemplate == null)
+                if (BackgroundTemplate == null || MaskPatternTemplate == null || ContentsPageTemplate == null)
                 {
                     var allTransforms = Resources.FindObjectsOfTypeAll<Transform>();
                     foreach (var t in allTransforms)
@@ -116,7 +192,8 @@ namespace BackInBusiness
                         string nm = t.name;
                         bool looksBackground = string.Equals(nm, "Background", StringComparison.Ordinal);
                         bool looksMask = string.Equals(nm, "MaskPattern", StringComparison.Ordinal);
-                        if (!looksBackground && !looksMask) continue;
+                        bool looksContentsPage = string.Equals(nm, "ContentsPage", StringComparison.Ordinal);
+                        if (!looksBackground && !looksMask && !looksContentsPage) continue;
 
                         // Prefer ones under a parent chain containing 'Detective' or 'Notebook'
                         bool prefer = false;
@@ -158,7 +235,19 @@ namespace BackInBusiness
                             }
                         }
 
-                        if (BackgroundTemplate != null && MaskPatternTemplate != null)
+                        if (looksContentsPage && (ContentsPageTemplate == null || prefer))
+                        {
+                            // Validate that this is a ContentsPage with an Image component
+                            var img = t.GetComponent<Image>();
+                            if (img != null && img.sprite != null)
+                            {
+                                ContentsPageTemplate = t;
+                                ContentsPageSprite = img.sprite;
+                                try { Plugin.Logger.LogInfo($"NotebookThemeHelper: Found ContentsPage via search at {GetPath(t)} (prefer={prefer})"); } catch { }
+                            }
+                        }
+
+                        if (BackgroundTemplate != null && MaskPatternTemplate != null && ContentsPageTemplate != null)
                             break;
                     }
 
@@ -198,7 +287,22 @@ namespace BackInBusiness
                     catch { }
                 }
                 
-                return (BackgroundTemplate != null && MaskPatternTemplate != null) || (BackgroundSprite != null && MaskPatternSprite != null);
+                // Also ensure ContentsPage is loaded
+                if (ContentsPageTemplate == null && ContentsPageSprite == null)
+                {
+                    FindContentsPage();
+                }
+                
+                // Return true if we have either templates or sprites for the required UI elements
+                bool hasBackground = BackgroundTemplate != null || BackgroundSprite != null;
+                bool hasMaskPattern = MaskPatternTemplate != null || MaskPatternSprite != null;
+                bool hasContentsPage = ContentsPageTemplate != null || ContentsPageSprite != null;
+                
+                // Log the status of each UI element
+                Plugin.Logger?.LogInfo($"NotebookThemeHelper: UI elements status - Background: {hasBackground}, MaskPattern: {hasMaskPattern}, ContentsPage: {hasContentsPage}");
+                
+                // We need at least Background and MaskPattern to proceed
+                return (hasBackground && hasMaskPattern);
             }
             catch (Exception ex)
             {
@@ -629,5 +733,163 @@ namespace BackInBusiness
         }
         
         // Helper method removed as calculations are now done directly in IsInsideRoundedRect
+        
+        // ContentsPage template is now declared at the top of the class with other UI templates
+
+        /// <summary>
+        /// Find the ContentsPage in the Detective's Notebook if not already cached
+        /// </summary>
+        private static void FindContentsPage()
+        {
+            if (ContentsPageTemplate != null && ContentsPageSprite != null) return;
+            
+            try
+            {
+                // Try multiple known paths where ContentsPage might be found
+                var paths = new string[] {
+                    "GameCanvas/WindowCanvas/Detective's Notebook/Page/Scroll View/Viewport/History/ContentsPage",
+                    "GameCanvas/WindowCanvas/Detective's Notebook/Page/Scroll View/Viewport/Content/ContentsPage",
+                    "GameCanvas/WindowCanvas/Detective's Notebook/ContentsPage"
+                };
+                
+                foreach (var path in paths)
+                {
+                    var obj = GameObject.Find(path);
+                    if (obj != null)
+                    {
+                        ContentsPageTemplate = obj.transform;
+                        var img = obj.GetComponent<Image>();
+                        if (img != null && img.sprite != null)
+                        {
+                            ContentsPageSprite = img.sprite;
+                            Plugin.Logger?.LogInfo($"NotebookThemeHelper: Found ContentsPage at {path} with sprite {img.sprite.name}");
+                            return;
+                        }
+                    }
+                }
+                
+                // If direct paths failed, search all objects with name "ContentsPage"
+                var allTransforms = Resources.FindObjectsOfTypeAll<Transform>();
+                foreach (var t in allTransforms)
+                {
+                    if (t == null || string.IsNullOrEmpty(t.name)) continue;
+                    if (t.name == "ContentsPage")
+                    {
+                        // Check if this is under the Detective's Notebook
+                        bool isUnderNotebook = false;
+                        Transform parent = t.parent;
+                        int depth = 0;
+                        while (parent != null && depth++ < 10)
+                        {
+                            if (parent.name == "Detective's Notebook")
+                            {
+                                isUnderNotebook = true;
+                                break;
+                            }
+                            parent = parent.parent;
+                        }
+                        
+                        if (isUnderNotebook)
+                        {
+                            ContentsPageTemplate = t;
+                            var img = t.GetComponent<Image>();
+                            if (img != null && img.sprite != null)
+                            {
+                                ContentsPageSprite = img.sprite;
+                                Plugin.Logger?.LogInfo($"NotebookThemeHelper: Found ContentsPage via search at {GetPath(t)} with sprite {img.sprite.name}");
+                                return;
+                            }
+                        }
+                    }
+                }
+                
+                Plugin.Logger?.LogWarning("NotebookThemeHelper: Could not find ContentsPage in Detective's Notebook");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger?.LogError($"Error finding ContentsPage: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Clone the Detective's Notebook ContentsPage and add it to the parent transform
+        /// Only copies the Image component without any children
+        /// </summary>
+        public static GameObject InstantiateContentsPage(Transform parent)
+        {
+            try
+            {
+                // Make sure we've tried to find the ContentsPage
+                FindContentsPage();
+                
+                // Create a new GameObject for our ContentsPage
+                GameObject inst = new GameObject("BIB_ContentsPage");
+                
+                // Add an Image component
+                var contentsImage = inst.AddComponent<Image>();
+                
+                // Use the sprite from the template if available
+                if (IsAlive(ContentsPageTemplate))
+                {
+                    var templateImg = ContentsPageTemplate.GetComponent<Image>();
+                    if (templateImg != null && templateImg.sprite != null)
+                    {
+                        // Copy all properties exactly from the original
+                        contentsImage.sprite = templateImg.sprite;
+                        contentsImage.type = templateImg.type;
+                        contentsImage.color = templateImg.color;
+                        contentsImage.material = templateImg.material;
+                        contentsImage.preserveAspect = templateImg.preserveAspect;
+                        contentsImage.fillCenter = templateImg.fillCenter;
+                        contentsImage.fillMethod = templateImg.fillMethod;
+                        contentsImage.fillAmount = templateImg.fillAmount;
+                        contentsImage.fillClockwise = templateImg.fillClockwise;
+                        contentsImage.fillOrigin = templateImg.fillOrigin;
+                        contentsImage.alphaHitTestMinimumThreshold = templateImg.alphaHitTestMinimumThreshold;
+                        
+                        // Log the sprite name and properties for debugging
+                        Plugin.Logger?.LogInfo($"NotebookThemeHelper: Copied ContentsPage image properties from template. Sprite name: {templateImg.sprite.name}, Type: {templateImg.type}, Color: {templateImg.color}");
+                    }
+                }
+                else if (ContentsPageSprite != null)
+                {
+                    contentsImage.sprite = ContentsPageSprite;
+                    Plugin.Logger?.LogInfo($"NotebookThemeHelper: Using cached ContentsPage sprite: {ContentsPageSprite.name}");
+                }
+                else
+                {
+                    Plugin.Logger?.LogWarning("NotebookThemeHelper: ContentsPage template not found, using fallback");
+                    // Use a fallback color if we couldn't find the template
+                    contentsImage.color = new Color(0.9f, 0.85f, 0.8f, 1f); // Light paper color
+                }
+                
+                // Set up the RectTransform - make it slightly smaller than the container
+                var rt = inst.GetComponent<RectTransform>();
+                if (rt == null) rt = inst.AddComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                // Add small margins to make it slightly smaller than the container
+                rt.offsetMin = new Vector2(5f, 5f);
+                rt.offsetMax = new Vector2(-5f, -5f);
+                
+                // Disable raycast target to prevent blocking interactions
+                contentsImage.raycastTarget = false;
+                
+                // Set the parent
+                if (parent != null)
+                {
+                    inst.transform.SetParent(parent, false);
+                    // Make sure it's at the back
+                    inst.transform.SetAsFirstSibling();
+                }
+                
+                return inst;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger?.LogError($"Error creating ContentsPage: {ex.Message}");
+                return null;
+            }
+        }
     }
 }
