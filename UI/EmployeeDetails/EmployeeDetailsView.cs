@@ -20,6 +20,7 @@ namespace BackInBusiness
         private static bool _attempted;
         public static Transform CardTemplate; // The source Container_Card to clone
         public static Transform CloseTemplate; // The preferred Close button template near the card
+        public static Transform ClearSearchTemplate; // The ClearSearch button under Notebook SearchField
         public static Sprite CardBG;
         public static Sprite CardNoise;
         public static Sprite CardPaper;
@@ -137,6 +138,16 @@ namespace BackInBusiness
                         CloseTemplate = FindCloseButtonNearCardTemplate();
                         if (CloseTemplate != null)
                             Plugin.Logger.LogInfo($"UIThemeCache: Cached CloseTemplate at {GetPath(CloseTemplate)}");
+                    }
+                    catch { }
+
+                    // Try to cache the Detective's Notebook ClearSearch button as well
+                    try
+                    {
+                        if (ClearSearchTemplate == null)
+                            ClearSearchTemplate = FindNotebookClearSearchButton();
+                        if (ClearSearchTemplate != null)
+                            Plugin.Logger.LogInfo($"UIThemeCache: Cached ClearSearchTemplate at {GetPath(ClearSearchTemplate)}");
                     }
                     catch { }
                 }
@@ -444,6 +455,118 @@ namespace BackInBusiness
                 try { Plugin.Logger.LogWarning($"UIThemeCache.FindAnyCloseButtonCandidate error: {ex.Message}"); } catch { }
             }
             return null;
+        }
+
+        // Locate the Detective's Notebook ClearSearch button in the active resources/hierarchy
+        public static Transform FindNotebookClearSearchButton()
+        {
+            try
+            {
+                // First try direct path if present
+                var direct = GameObject.Find("GameCanvas/WindowCanvas/Detective's Notebook/Page/Scroll View/Viewport/History/ContentsPage/SearchField/ClearSearch");
+                if (direct != null)
+                {
+                    try { Plugin.Logger.LogInfo($"UIThemeCache: Found ClearSearch at direct path: {GetPath(direct.transform)}"); } catch { }
+                    return direct.transform;
+                }
+
+                // Fallback: scan all transforms named 'ClearSearch' and score by path proximity to Detective's Notebook SearchField
+                var all = Resources.FindObjectsOfTypeAll<Transform>();
+                Transform best = null; int bestScore = -1;
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var t = all[i]; if (t == null) continue;
+                    var tn = t.name ?? string.Empty;
+                    if (!string.Equals(tn, "ClearSearch", StringComparison.Ordinal)) continue;
+
+                    int score = 0;
+                    try
+                    {
+                        var p = t;
+                        int depth = 0;
+                        while (p != null && depth++ < 30)
+                        {
+                            var pn = p.name != null ? p.name.ToLowerInvariant() : string.Empty;
+                            if (pn.Contains("detective")) score += 2;
+                            if (pn.Contains("notebook")) score += 2;
+                            if (pn.Contains("searchfield")) score += 3;
+                            if (pn.Contains("contentspage")) score += 1;
+                            if (pn.Contains("history")) score += 1;
+                            p = p.parent;
+                        }
+                    }
+                    catch { }
+
+                    if (score > bestScore)
+                    {
+                        bestScore = score; best = t;
+                    }
+                }
+                if (best != null)
+                {
+                    try { Plugin.Logger.LogInfo($"UIThemeCache: Found ClearSearch at {GetPath(best)} (score={bestScore})"); } catch { }
+                    return best;
+                }
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.FindNotebookClearSearchButton error: {ex.Message}"); } catch { }
+            }
+            return null;
+        }
+
+        // Instantiate a sanitized ClearSearch-like button (copy only Image sprite) for our UI
+        public static GameObject InstantiateClearSearchButton(Transform parent)
+        {
+            try
+            {
+                if (ClearSearchTemplate == null)
+                {
+                    // Attempt to find if not cached
+                    ClearSearchTemplate = FindNotebookClearSearchButton();
+                }
+
+                Transform tmpl = ClearSearchTemplate;
+                if (tmpl == null)
+                {
+                    try { Plugin.Logger.LogWarning("UIThemeCache: ClearSearch template not found; cannot instantiate."); } catch { }
+                    return null;
+                }
+
+                // Create clean GO and copy the primary Image sprite from source (self or child)
+                var go = new GameObject("Emp_ClearSearch");
+                var rt = go.AddComponent<RectTransform>();
+                rt.SetParent(parent, false);
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+
+                var img = go.AddComponent<Image>();
+                try
+                {
+                    Image src = tmpl.GetComponent<Image>();
+                    if (src == null) src = tmpl.GetComponentInChildren<Image>(true);
+                    if (src != null)
+                    {
+                        img.sprite = src.sprite;
+                        img.type = src.type;
+                        img.pixelsPerUnitMultiplier = src.pixelsPerUnitMultiplier;
+                        img.material = src.material;
+                        img.color = new Color(src.color.r, src.color.g, src.color.b, 1f);
+                        img.raycastTarget = true;
+                    }
+                }
+                catch { }
+
+                try { go.SetActive(true); } catch { }
+                try { Plugin.Logger.LogInfo("UIThemeCache: Instantiated clean ClearSearch (copied sprite only)."); } catch { }
+                return go;
+            }
+            catch (Exception ex)
+            {
+                try { Plugin.Logger.LogWarning($"UIThemeCache.InstantiateClearSearchButton error: {ex.Message}"); } catch { }
+                return null;
+            }
         }
     }
 
@@ -830,9 +953,9 @@ namespace BackInBusiness
                 jobRt.anchorMin = new Vector2(0f, 1f);
                 jobRt.anchorMax = new Vector2(0f, 1f);
                 jobRt.pivot = new Vector2(0f, 1f);
-                jobRt.anchoredPosition = new Vector2(80f + 128f + 12f, -40f);
+                jobRt.anchoredPosition = new Vector2(70f + 128f + 12f, -40f);
                 jobRt.sizeDelta = new Vector2(380f, 22f);
-                jobText.fontSize = 14f;
+                jobText.fontSize = 18f;
                 jobText.color = Color.black;
                 
                 // Log the hierarchy path for debugging
@@ -849,10 +972,10 @@ namespace BackInBusiness
                 salRt.anchorMin = new Vector2(0f, 1f);
                 salRt.anchorMax = new Vector2(0f, 1f);
                 salRt.pivot = new Vector2(0f, 1f);
-                salRt.anchoredPosition = new Vector2(80f + 128f + 12f, -40f - 24f);
+                salRt.anchoredPosition = new Vector2(70f + 128f + 12f, -40f - 24f);
                 salRt.sizeDelta = new Vector2(380f, 22f);
                 // Font size and color
-                salaryText.fontSize = 14f;
+                salaryText.fontSize = 18f;
                 salaryText.color = Color.black;
                 
                 // Log the hierarchy path for debugging
@@ -869,10 +992,10 @@ namespace BackInBusiness
                 rotaRt.anchorMin = new Vector2(0f, 1f);
                 rotaRt.anchorMax = new Vector2(0f, 1f);
                 rotaRt.pivot = new Vector2(0f, 1f);
-                rotaRt.anchoredPosition = new Vector2(80f + 128f + 12f, -40f - 24f - 22f); // Position below salary text
+                rotaRt.anchoredPosition = new Vector2(70f + 128f + 12f, -40f - 24f - 22f); // Position below salary text
                 rotaRt.sizeDelta = new Vector2(380f, 22f);
                 // Font size and color
-                workRotaText.fontSize = 14f;
+                workRotaText.fontSize = 18f;
                 workRotaText.color = Color.black;
                 
                 // Log the hierarchy path for debugging
@@ -889,10 +1012,10 @@ namespace BackInBusiness
                 addressRt.anchorMin = new Vector2(0f, 1f);
                 addressRt.anchorMax = new Vector2(0f, 1f);
                 addressRt.pivot = new Vector2(0f, 1f);
-                addressRt.anchoredPosition = new Vector2(80f + 128f + 12f, -40f - 24f - 22f - 22f); // Position below work rota text
+                addressRt.anchoredPosition = new Vector2(70f + 128f + 12f, -40f - 24f - 22f - 22f); // Position below work rota text
                 addressRt.sizeDelta = new Vector2(380f, 22f);
                 // Font size and color
-                homeAddressText.fontSize = 14f;
+                homeAddressText.fontSize = 18f;
                 homeAddressText.color = Color.black;
                 
                 // Log the hierarchy path for debugging
@@ -1192,29 +1315,117 @@ namespace BackInBusiness
             // Parent under the card root so it clips and layers correctly with the themed background
             try { btnRow.transform.SetParent(cardRoot.transform, false); btnRow.transform.SetAsLastSibling(); } catch { }
 
-            changeRoleButton = UIFactory.CreateButton(btnRow, "Emp_ChangeRole", "Change Role");
-            changeRoleButton.ButtonText.fontSize = 14;
-            // Brownish-orange theme on button background; keep text readable
-            changeRoleButton.ButtonText.color = Color.white;
-            changeRoleButton.ButtonText.fontStyle = FontStyle.Bold;
-            SetupButton(changeRoleButton, new Color(0.72f, 0.42f, 0.18f, 1f));
-            try { var leCR = changeRoleButton.Component.gameObject.GetComponent<LayoutElement>() ?? changeRoleButton.Component.gameObject.AddComponent<LayoutElement>(); leCR.preferredWidth = 180f; leCR.minHeight = 36f; } catch { }
-            changeRoleButton.OnClick += () =>
+            // Replace text buttons with ClearSearch-styled clones from Detective's Notebook
+            try
             {
-                Plugin.Logger.LogInfo("Change Role clicked (todo)");
-            };
+                // Change Role button clone
+                var changeGo = UIThemeCache.InstantiateClearSearchButton(btnRow.transform);
+                if (changeGo != null)
+                {
+                    changeGo.name = "Emp_ChangeRoleBtn";
+                    var changeRt = changeGo.GetComponent<RectTransform>();
+                    changeRt.sizeDelta = new Vector2(36f, 36f);
+                    try
+                    {
+                        var le = changeGo.GetComponent<LayoutElement>() ?? changeGo.AddComponent<LayoutElement>();
+                        le.minWidth = 36f; le.minHeight = 36f; le.preferredWidth = 36f; le.preferredHeight = 36f;
+                    }
+                    catch { }
 
-            fireButton = UIFactory.CreateButton(btnRow, "Emp_Fire", "Fire");
-            fireButton.ButtonText.fontSize = 14;
-            // Brownish-orange theme on button background; keep text readable
-            fireButton.ButtonText.color = Color.white;
-            fireButton.ButtonText.fontStyle = FontStyle.Bold;
-            SetupButton(fireButton, new Color(0.66f, 0.34f, 0.12f, 1f));
-            try { var leF = fireButton.Component.gameObject.GetComponent<LayoutElement>() ?? fireButton.Component.gameObject.AddComponent<LayoutElement>(); leF.preferredWidth = 140f; leF.minHeight = 36f; } catch { }
-            fireButton.OnClick += () =>
+                    var btn = changeGo.GetComponent<Button>() ?? changeGo.AddComponent<Button>();
+                    try { btn.onClick.RemoveAllListeners(); } catch { }
+                    try { btn.onClick.AddListener(() => { try { OnChangeRoleClicked(); } catch { } }); } catch { }
+                    try { var nav = btn.navigation; nav.mode = Navigation.Mode.None; btn.navigation = nav; } catch { }
+                    try { btn.transition = Selectable.Transition.None; } catch { }
+
+                    try
+                    {
+                        var controller = changeGo.GetComponent<BIBButtonController>() ?? changeGo.AddComponent<BIBButtonController>();
+                        controller.UseCloneHighlight = true;
+                        controller.UseAdditionalHighlight = true;
+                        controller.AdditionalHighlightAtFront = true;
+                        controller.AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
+                        controller.useGenericAudioSounds = true;
+                        controller.isCloseButton = false;
+                        if (controller.TargetImage == null)
+                        {
+                            var imgSelf = changeGo.GetComponent<Image>();
+                            if (imgSelf != null) controller.TargetImage = imgSelf;
+                            else { var imgChild = changeGo.GetComponentInChildren<Image>(true); if (imgChild != null) controller.TargetImage = imgChild; }
+                        }
+                        if (controller.TargetTransform == null) controller.TargetTransform = changeGo.GetComponent<RectTransform>();
+
+                        var et = changeGo.GetComponent<EventTrigger>() ?? changeGo.AddComponent<EventTrigger>();
+                        if (et.triggers == null) et.triggers = new Il2CppSystem.Collections.Generic.List<EventTrigger.Entry>(); else et.triggers.Clear();
+                        EventTrigger.Entry mk(EventTriggerType t)
+                        {
+                            var e = new EventTrigger.Entry { eventID = t }; e.callback = new EventTrigger.TriggerEvent(); return e;
+                        }
+                        try { var e = mk(EventTriggerType.PointerEnter); e.callback.AddListener((ev) => { try { controller.OnPointerEnter(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk(EventTriggerType.PointerExit);  e.callback.AddListener((ev) => { try { controller.OnPointerExit(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk(EventTriggerType.PointerDown);  e.callback.AddListener((ev) => { try { controller.OnPointerDown(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk(EventTriggerType.PointerUp);    e.callback.AddListener((ev) => { try { controller.OnPointerUp(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk(EventTriggerType.PointerClick);e.callback.AddListener((ev) => { try { controller.OnPointerClick(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                    }
+                    catch { }
+                }
+
+                // Fire button clone
+                var fireGo = UIThemeCache.InstantiateClearSearchButton(btnRow.transform);
+                if (fireGo != null)
+                {
+                    fireGo.name = "Emp_FireBtn";
+                    var fireRt = fireGo.GetComponent<RectTransform>();
+                    fireRt.sizeDelta = new Vector2(36f, 36f);
+                    try
+                    {
+                        var le = fireGo.GetComponent<LayoutElement>() ?? fireGo.AddComponent<LayoutElement>();
+                        le.minWidth = 36f; le.minHeight = 36f; le.preferredWidth = 36f; le.preferredHeight = 36f;
+                    }
+                    catch { }
+
+                    var btn = fireGo.GetComponent<Button>() ?? fireGo.AddComponent<Button>();
+                    try { btn.onClick.RemoveAllListeners(); } catch { }
+                    try { btn.onClick.AddListener(() => { try { OnFireClicked(); } catch { } }); } catch { }
+                    try { var nav = btn.navigation; nav.mode = Navigation.Mode.None; btn.navigation = nav; } catch { }
+                    try { btn.transition = Selectable.Transition.None; } catch { }
+
+                    try
+                    {
+                        var controller = fireGo.GetComponent<BIBButtonController>() ?? fireGo.AddComponent<BIBButtonController>();
+                        controller.UseCloneHighlight = true;
+                        controller.UseAdditionalHighlight = true;
+                        controller.AdditionalHighlightAtFront = true;
+                        controller.AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
+                        controller.useGenericAudioSounds = true;
+                        controller.isCloseButton = false;
+                        if (controller.TargetImage == null)
+                        {
+                            var imgSelf = fireGo.GetComponent<Image>();
+                            if (imgSelf != null) controller.TargetImage = imgSelf;
+                            else { var imgChild = fireGo.GetComponentInChildren<Image>(true); if (imgChild != null) controller.TargetImage = imgChild; }
+                        }
+                        if (controller.TargetTransform == null) controller.TargetTransform = fireGo.GetComponent<RectTransform>();
+
+                        var et = fireGo.GetComponent<EventTrigger>() ?? fireGo.AddComponent<EventTrigger>();
+                        if (et.triggers == null) et.triggers = new Il2CppSystem.Collections.Generic.List<EventTrigger.Entry>(); else et.triggers.Clear();
+                        EventTrigger.Entry mk2(EventTriggerType t)
+                        {
+                            var e = new EventTrigger.Entry { eventID = t }; e.callback = new EventTrigger.TriggerEvent(); return e;
+                        }
+                        try { var e = mk2(EventTriggerType.PointerEnter); e.callback.AddListener((ev) => { try { controller.OnPointerEnter(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk2(EventTriggerType.PointerExit);  e.callback.AddListener((ev) => { try { controller.OnPointerExit(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk2(EventTriggerType.PointerDown);  e.callback.AddListener((ev) => { try { controller.OnPointerDown(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk2(EventTriggerType.PointerUp);    e.callback.AddListener((ev) => { try { controller.OnPointerUp(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                        try { var e = mk2(EventTriggerType.PointerClick);e.callback.AddListener((ev) => { try { controller.OnPointerClick(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
             {
-                Plugin.Logger.LogInfo("Fire clicked (todo)");
-            };
+                try { Plugin.Logger.LogWarning($"EmployeeDetailsView: error constructing ClearSearch-style buttons: {ex.Message}"); } catch { }
+            }
 
             // (Removed debug label used during diagnostics)
 
@@ -1232,6 +1443,19 @@ namespace BackInBusiness
             colors.selectedColor = normal;
             colors.disabledColor = new Color(normal.r, normal.g, normal.b, 0.5f);
             btn.Component.colors = colors;
+        }
+
+        // Click handlers used by cloned ClearSearch buttons
+        private void OnChangeRoleClicked()
+        {
+            try { Plugin.Logger.LogInfo("Change Role clicked (ClearSearch clone)"); } catch { }
+            // TODO: Implement role change flow
+        }
+
+        private void OnFireClicked()
+        {
+            try { Plugin.Logger.LogInfo("Fire clicked (ClearSearch clone)"); } catch { }
+            // TODO: Implement fire flow
         }
 
         public void Show(Citizen citizen, Occupation occ, int addressId = -1, int rosterIndex = -1)
