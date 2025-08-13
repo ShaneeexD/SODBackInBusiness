@@ -166,6 +166,7 @@ namespace BackInBusiness
         private Text salaryText;
         private ButtonRef fireButton;
         private ButtonRef changeRoleButton;
+        public event Action CloseRequested;
 
         public void Build(GameObject parent)
         {
@@ -198,50 +199,82 @@ namespace BackInBusiness
             // Try cloning the actual game's Container_Card; falls back to manual layers
             GameObject clonedCard = UIThemeCache.InstantiateCard(cardRoot.transform);
 
-            // Portrait (bigger)
+            // Portrait (bigger) - fixed to top-left
             var portraitGO = UIFactory.CreateUIObject("Emp_Portrait", root);
             portrait = portraitGO.AddComponent<RawImage>();
             var pRt = portraitGO.GetComponent<RectTransform>();
-            // Top-left anchored
             pRt.anchorMin = new Vector2(0f, 1f);
             pRt.anchorMax = new Vector2(0f, 1f);
             pRt.pivot = new Vector2(0f, 1f);
-            pRt.anchoredPosition = new Vector2(12f, -20f);
+            pRt.anchoredPosition = new Vector2(20f, -70f);
             pRt.sizeDelta = new Vector2(128f, 128f);
+            // Parent inside the card for consistent clipping; keep it below text by not being the last sibling
+            try { portraitGO.transform.SetParent(cardRoot.transform, false); portraitGO.transform.SetSiblingIndex(1); } catch { }
 
-            // Name
+            // Name - fixed offsets from top-left
             nameText = UIFactory.CreateLabel(root, "Emp_Name", "Name", TextAnchor.UpperLeft);
             var nameRt = nameText.GetComponent<RectTransform>();
-            // Top row to the right of portrait (tighter spacing)
-            nameRt.anchorMin = new Vector2(0.20f, 0.86f);
-            nameRt.anchorMax = new Vector2(0.98f, 0.96f);
-            nameRt.offsetMin = Vector2.zero;
-            nameRt.offsetMax = Vector2.zero;
-            nameText.fontSize = 22;
+            nameRt.anchorMin = new Vector2(0f, 1f);
+            nameRt.anchorMax = new Vector2(0f, 1f);
+            nameRt.pivot = new Vector2(0f, 1f);
+            nameRt.anchoredPosition = new Vector2(20f, -12f);
+            nameRt.sizeDelta = new Vector2(460f, 40f);
+            nameText.fontSize = 32;
             nameText.fontStyle = FontStyle.Bold;
-            nameText.color = Color.white;
+            nameText.color = Color.black;
+            // Ensure text is not clipped and sits above background layers
+            nameText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            nameText.verticalOverflow = VerticalWrapMode.Overflow;
+            // Parent under the card so it's clipped correctly and ordered above the paper
+            try { nameText.transform.SetParent(cardRoot.transform, false); nameText.transform.SetAsLastSibling(); } catch { }
 
-            // Job title
+            // Job title - fixed below name
             jobText = UIFactory.CreateLabel(root, "Emp_Job", "Job", TextAnchor.UpperLeft);
             var jobRt = jobText.GetComponent<RectTransform>();
-            // Directly under name
-            jobRt.anchorMin = new Vector2(0.20f, 0.76f);
-            jobRt.anchorMax = new Vector2(0.98f, 0.86f);
-            jobRt.offsetMin = Vector2.zero;
-            jobRt.offsetMax = Vector2.zero;
+            jobRt.anchorMin = new Vector2(0f, 1f);
+            jobRt.anchorMax = new Vector2(0f, 1f);
+            jobRt.pivot = new Vector2(0f, 1f);
+            jobRt.anchoredPosition = new Vector2(20f + 128f + 12f, -30f - 40f);
+            jobRt.sizeDelta = new Vector2(380f, 22f);
             jobText.fontSize = 14;
-            jobText.color = new Color(0.9f, 0.9f, 0.9f, 1f);
+            jobText.color = Color.black;
+            try { jobText.transform.SetParent(cardRoot.transform, false); jobText.transform.SetAsLastSibling(); } catch { }
 
-            // Salary
+            // Salary - fixed below job
             salaryText = UIFactory.CreateLabel(root, "Emp_Salary", "Salary", TextAnchor.UpperLeft);
             var salRt = salaryText.GetComponent<RectTransform>();
-            // Below occupation
-            salRt.anchorMin = new Vector2(0.20f, 0.68f);
-            salRt.anchorMax = new Vector2(0.98f, 0.76f);
-            salRt.offsetMin = Vector2.zero;
-            salRt.offsetMax = Vector2.zero;
+            salRt.anchorMin = new Vector2(0f, 1f);
+            salRt.anchorMax = new Vector2(0f, 1f);
+            salRt.pivot = new Vector2(0f, 1f);
+            salRt.anchoredPosition = new Vector2(20f + 128f + 12f, -30f - 40f - 24f);
+            salRt.sizeDelta = new Vector2(380f, 22f);
             salaryText.fontSize = 14;
-            salaryText.color = Color.white;
+            salaryText.color = Color.black;
+            try { salaryText.transform.SetParent(cardRoot.transform, false); salaryText.transform.SetAsLastSibling(); } catch { }
+
+            // Close button inside the view (top-right of content area)
+            var closeRef = UIFactory.CreateButton(root, "Emp_Close", "X");
+            closeRef.ButtonText.fontSize = 22;
+            closeRef.ButtonText.color = Color.black;
+            closeRef.ButtonText.fontStyle = FontStyle.Bold;
+            var closeRt = closeRef.Component.GetComponent<RectTransform>();
+            closeRt.anchorMin = new Vector2(1f, 1f);
+            closeRt.anchorMax = new Vector2(1f, 1f);
+            closeRt.pivot = new Vector2(1f, 1f);
+            // Make the button background invisible (keep text visible and clickable)
+            try
+            {
+                var img = closeRef.Component.GetComponent<Image>();
+                if (img != null)
+                {
+                    var c = img.color; c.a = 0f; img.color = c;
+                }
+            }
+            catch { }
+            closeRt.anchoredPosition = new Vector2(-10f, -10f);
+            closeRt.sizeDelta = new Vector2(35f, 35f);
+            try { closeRef.Component.transform.SetAsLastSibling(); } catch { }
+            closeRef.OnClick += () => { try { CloseRequested?.Invoke(); } catch { } };
 
             // Background and themed layers (Card BG / Paper / Noise) only if cloning failed
             if (clonedCard == null)

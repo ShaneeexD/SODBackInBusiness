@@ -41,8 +41,8 @@ namespace BackInBusiness
         private EmployeeDetailsView _view;
 
         public override string Name => _panelName;
-        public override int MinWidth => 300;
-        public override int MinHeight => 85;
+        public override int MinWidth => 55;
+        public override int MinHeight => 300;
         public override Vector2 DefaultAnchorMin => _anchorMin;
         public override Vector2 DefaultAnchorMax => _anchorMax;
 
@@ -185,6 +185,8 @@ namespace BackInBusiness
 
                 _view = new EmployeeDetailsView();
                 _view.Build(content);
+                // Wire inner view close to only close this floating panel
+                try { _view.CloseRequested += () => { try { SetActive(false); } catch { } }; } catch { }
                 _view.Show(citizenArg ?? _citizen, occArg ?? _occupation, addrArg, rosterIdx);
                 try { _view.BringToFront(); } catch { }
 
