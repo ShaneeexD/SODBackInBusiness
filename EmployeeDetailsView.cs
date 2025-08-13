@@ -472,20 +472,42 @@ namespace BackInBusiness
             // Ensure we're the last sibling so our children draw above the panel content background.
             root.transform.SetAsLastSibling();
 
-            // Card root first (background container behind all content)
+            // Card root container under the panel root
             GameObject cardRoot = UIFactory.CreateUIObject("Emp_CardRoot", root);
             var cardRt = cardRoot.GetComponent<RectTransform>();
             cardRt.anchorMin = new Vector2(0f, 0f);
             cardRt.anchorMax = new Vector2(1f, 1f);
             cardRt.offsetMin = Vector2.zero;
             cardRt.offsetMax = Vector2.zero;
-            // Mask like original card
-            try { if (cardRoot.GetComponent<RectMask2D>() == null) cardRoot.AddComponent<RectMask2D>(); } catch { }
-            // Ensure background is behind all other children
-            try { cardRoot.transform.SetAsFirstSibling(); } catch { }
+            try { cardRoot.transform.SetAsLastSibling(); } catch { }
+            
+            // Prime NotebookThemeHelper cache once, similar to UIThemeCache usage
+            try { if (!NotebookThemeHelper.EnsureLoaded()) NotebookThemeHelper.ForceRescan(); } catch { }
 
-            // Try cloning the actual game's Container_Card; falls back to manual layers
-            GameObject clonedCard = UIThemeCache.InstantiateCard(cardRoot.transform);
+            // Add Detective's Notebook background under cardRoot and make it the parent for the card
+            GameObject background = NotebookThemeHelper.InstantiateBackground(cardRoot.transform);
+            if (background != null) {
+                background.transform.SetAsFirstSibling(); // very back in cardRoot
+                try { Plugin.Logger.LogInfo("EmployeeDetailsView: Added Detective's Notebook Background to cardRoot"); } catch { }
+            }
+
+            // Mask pattern as child of background (above background image)
+            GameObject maskPattern = NotebookThemeHelper.InstantiateMaskPattern(background != null ? background.transform : cardRoot.transform);
+            if (maskPattern != null) {
+                try { maskPattern.transform.SetAsFirstSibling(); } catch { }
+                try { Plugin.Logger.LogInfo("EmployeeDetailsView: Added Detective's Notebook MaskPattern to background"); } catch { }
+            }
+
+            // Clone the actual game's Container_Card under the background; background acts as parent container
+            GameObject clonedCard = UIThemeCache.InstantiateCard(background != null ? background.transform : cardRoot.transform);
+            if (clonedCard != null)
+            {
+                // ensure it sits above mask but below other content we add later
+                try { clonedCard.transform.SetSiblingIndex(1); } catch { }
+            }
+
+            // Remove RectMask2D from cardRoot to avoid clipping backgrounds
+            try { var rm = cardRoot.GetComponent<RectMask2D>(); if (rm != null) UnityEngine.Object.Destroy(rm); } catch { }
 
             // Portrait (bigger) - fixed to top-left
             var portraitGO = UIFactory.CreateUIObject("Emp_Portrait", root);
