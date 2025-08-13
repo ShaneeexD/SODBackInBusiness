@@ -1356,7 +1356,22 @@ namespace BackInBusiness
                     {
                         // Keep background image enabled as the button visual
                         var bgImg = changeGo.GetComponent<Image>();
-                        try { if (bgImg != null) bgImg.enabled = true; } catch { }
+                        try
+                        {
+                            if (bgImg != null)
+                            {
+                                bgImg.enabled = true;
+                                // Inside fill color rgba(192,175,164,255)
+                                bgImg.color = new Color32(192, 175, 164, 255);
+                                // Add/adjust border via Outline effect using rgba(148,126,115,255)
+                                var outline = changeGo.GetComponent<Outline>();
+                                if (outline == null) outline = changeGo.AddComponent<Outline>();
+                                outline.effectColor = new Color32(148, 126, 115, 255);
+                                outline.effectDistance = new Vector2(1f, -1f);
+                                outline.useGraphicAlpha = true;
+                            }
+                        }
+                        catch { }
 
                         // Add centered TMP label
                         var label = CreateTMP(changeGo, "Label", "Change Role", TMPro.TextAlignmentOptions.Center);
@@ -1427,7 +1442,22 @@ namespace BackInBusiness
                     {
                         // Keep background image enabled as the button visual
                         var bgImg = fireGo.GetComponent<Image>();
-                        try { if (bgImg != null) bgImg.enabled = true; } catch { }
+                        try
+                        {
+                            if (bgImg != null)
+                            {
+                                bgImg.enabled = true;
+                                // Inside fill color rgba(192,175,164,255)
+                                bgImg.color = new Color32(192, 175, 164, 255);
+                                // Add/adjust border via Outline effect using rgba(148,126,115,255)
+                                var outline = fireGo.GetComponent<Outline>();
+                                if (outline == null) outline = fireGo.AddComponent<Outline>();
+                                outline.effectColor = new Color32(148, 126, 115, 255);
+                                outline.effectDistance = new Vector2(1f, -1f);
+                                outline.useGraphicAlpha = true;
+                            }
+                        }
+                        catch { }
 
                         // Add centered TMP label
                         var label = CreateTMP(fireGo, "Label", "Fire", TMPro.TextAlignmentOptions.Center);
