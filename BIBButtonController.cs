@@ -12,7 +12,7 @@ namespace BackInBusiness
     {
         public Image TargetImage;          // button image we tint
         public RectTransform TargetTransform; // button rect we scale
-
+        public AudioEvent buttonDown;
         public float NormalScale = 1.0f;
         public float PressedScale = 0.95f;
         public float HoverBrightness = 1.15f;
@@ -21,14 +21,20 @@ namespace BackInBusiness
         public bool UseAdditionalHighlight = true;
         public bool UseCloneHighlight = true;
         public bool AdditionalHighlightAtFront = true;
-        public Color AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
+        public Color AdditionalHighlightColour = new Color(1f, 1f, 1f, 1f);
         public Color AdditionalHighlightUninteractableColour = Color.gray;
+        // Base transform adjustments applied via a wrapper so the in-game animation (which changes localScale) is preserved
+        public Vector3 AdditionalHighlightLocalPositionOffset = new Vector3(-18.3509f, -17.9055f, 0f);
+        public float AdditionalHighlightScaleMultiplier = 1.6f;
+        public bool ForceWrapperOffsetEachFrame = true;
+        public bool ForceOpaqueHighlight = true;
 
         private bool _hovered, _pressed, _interactable = true;
         private Color _origColor;
         private Vector3 _origScale;
 
         private RectTransform _highlightRect;
+        private RectTransform _highlightWrapper;
         private Image _highlightImage;
 
         private static Transform _cachedHighlightTemplate;
@@ -75,6 +81,7 @@ namespace BackInBusiness
         {
             if (!_interactable) return;
             _pressed = true;
+            AudioController.Instance.Play2DSound(this.buttonDown, null, 1f);
             ApplyVisuals();
         }
 
@@ -99,7 +106,7 @@ namespace BackInBusiness
                     var c = _origColor;
                     if (!_interactable)
                     {
-                        c.a *= 0.5f;
+                        c.a *= 1.0f;
                     }
                     else if (_pressed)
                     {
@@ -167,24 +174,39 @@ namespace BackInBusiness
                     try { Plugin.Logger?.LogInfo("[BIBButtonController] Created fallback AdditionalHighlight overlay."); } catch { }
                 }
 
+                // Create a wrapper under the button, stretch to parent; apply base scale on wrapper
+                var wrapper = new GameObject("AdditionalHighlight_Wrapper");
+                var wrapperRT = wrapper.AddComponent<RectTransform>();
+                wrapperRT.SetParent(TargetTransform, false);
+                // Center-anchored wrapper so we can offset safely without interfering with child's anchors/pivot
+                wrapperRT.anchorMin = new Vector2(0.5f, 0.5f);
+                wrapperRT.anchorMax = new Vector2(0.5f, 0.5f);
+                wrapperRT.pivot = new Vector2(0.5f, 0.5f);
+                wrapperRT.anchoredPosition3D = AdditionalHighlightLocalPositionOffset;
+                wrapperRT.anchoredPosition = new Vector2(AdditionalHighlightLocalPositionOffset.x, AdditionalHighlightLocalPositionOffset.y);
+                // Ensure wrapper has a size so stretched children don't collapse to zero if the prefab uses stretch anchors
+                try { wrapperRT.sizeDelta = TargetTransform != null ? TargetTransform.rect.size : Vector2.zero; } catch { }
+                // Ensure layout groups do not override our anchored position
+                try { var le = wrapper.AddComponent<LayoutElement>(); le.ignoreLayout = true; } catch { }
+                wrapperRT.localScale = Vector3.one * Mathf.Max(0.01f, AdditionalHighlightScaleMultiplier);
+                if (!AdditionalHighlightAtFront) wrapperRT.SetAsFirstSibling(); else wrapperRT.SetAsLastSibling();
+                _highlightWrapper = wrapperRT;
+
+                // Parent the highlight under wrapper and set its anchored position offset so animation scale is preserved
                 var rt = go.GetComponent<RectTransform>();
                 if (rt == null) rt = go.AddComponent<RectTransform>();
-                rt.SetParent(TargetTransform, false);
-                if (!AdditionalHighlightAtFront) rt.SetAsFirstSibling(); else rt.SetAsLastSibling();
-                rt.anchorMin = new Vector2(0f, 0f);
-                rt.anchorMax = new Vector2(1f, 1f);
-                rt.offsetMin = Vector2.zero;
-                rt.offsetMax = Vector2.zero;
-                rt.localScale = Vector3.one;
+                rt.SetParent(wrapperRT, false);
+                // Keep original anchors/pivot from the prefab; only zero localPosition so wrapper controls offset/scale
                 rt.localPosition = Vector3.zero;
+                rt.localScale = Vector3.one; // animated by game controller if present
 
-                _highlightRect = rt;
+                _highlightRect = rt; // We toggle the active state on the highlight child, not the wrapper
                 _highlightImage = go.GetComponent<Image>();
                 if (_highlightImage != null) _highlightImage.raycastTarget = false;
 
                 // Disabled by default; will be enabled only when hovered
                 _highlightRect.gameObject.SetActive(false);
-                try { Plugin.Logger?.LogInfo($"[BIBButtonController] Highlight child set under {gameObject.name}, active=false"); } catch { }
+                try { Plugin.Logger?.LogInfo($"[BIBButtonController] Highlight wrapper pos={_highlightWrapper.anchoredPosition}, child localPos={_highlightRect.localPosition}, offset={AdditionalHighlightLocalPositionOffset}, scaleMult={AdditionalHighlightScaleMultiplier} under {gameObject.name}, active=false"); } catch { }
             }
             catch { }
         }
@@ -217,7 +239,7 @@ namespace BackInBusiness
 
         private void UpdateAdditionalHighlight()
         {
-            if (!UseAdditionalHighlight || _highlightRect == null || _highlightImage == null) return;
+            if (!UseAdditionalHighlight || _highlightRect == null) return;
             bool show = _interactable && _hovered;
             if (show)
             {
@@ -225,7 +247,35 @@ namespace BackInBusiness
                 {
                     // Set color for state each time we show
                     var baseCol = _interactable ? AdditionalHighlightColour : AdditionalHighlightUninteractableColour;
+                    if (ForceOpaqueHighlight) baseCol.a = 1f;
                     if (_highlightImage != null) _highlightImage.color = baseCol;
+                    // Force color for all child graphics to guarantee opacity and tint
+                    try
+                    {
+                        var graphics = _highlightRect.GetComponentsInChildren<MaskableGraphic>(true);
+                        for (int i = 0; i < graphics.Length; i++)
+                        {
+                            graphics[i].color = baseCol;
+                        }
+                    }
+                    catch { }
+                    // Log ancestor CanvasGroup chain once to help diagnose unexpected transparency
+                    try
+                    {
+                        var t = _highlightRect.transform;
+                        int hops = 0;
+                        while (t != null && hops < 8)
+                        {
+                            var cg = t.GetComponent<CanvasGroup>();
+                            if (cg != null)
+                            {
+                                Plugin.Logger?.LogInfo($"[BIBButtonController] CanvasGroup on '{t.name}' alpha={cg.alpha}, interactable={cg.interactable}, blocksRaycasts={cg.blocksRaycasts}");
+                            }
+                            t = t.parent;
+                            hops++;
+                        }
+                    }
+                    catch { }
                     _highlightRect.gameObject.SetActive(true);
                     try { Plugin.Logger?.LogInfo("[BIBButtonController] Highlight enabled (hover)"); } catch { }
                 }
@@ -238,6 +288,20 @@ namespace BackInBusiness
                     try { Plugin.Logger?.LogInfo("[BIBButtonController] Highlight disabled (exit)"); } catch { }
                 }
             }
+        }
+
+        private void LateUpdate()
+        {
+            // Some layouts/scripts may reset anchored position; re-assert if requested
+            try
+            {
+                if (ForceWrapperOffsetEachFrame && _highlightWrapper != null)
+                {
+                    _highlightWrapper.anchoredPosition3D = AdditionalHighlightLocalPositionOffset;
+                    _highlightWrapper.anchoredPosition = new Vector2(AdditionalHighlightLocalPositionOffset.x, AdditionalHighlightLocalPositionOffset.y);
+                }
+            }
+            catch { }
         }
     }
 }
