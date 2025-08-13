@@ -602,6 +602,19 @@ namespace BackInBusiness
             // Remove RectMask2D from cardRoot to avoid clipping backgrounds
             try { var rm = cardRoot.GetComponent<RectMask2D>(); if (rm != null) UnityEngine.Object.Destroy(rm); } catch { }
 
+            // White border box for portrait
+            var portraitBorderGO = UIFactory.CreateUIObject("Emp_PortraitBorder", root);
+            var borderImage = portraitBorderGO.AddComponent<Image>();
+            borderImage.color = Color.white;
+            var borderRt = portraitBorderGO.GetComponent<RectTransform>();
+            borderRt.anchorMin = new Vector2(0f, 1f);
+            borderRt.anchorMax = new Vector2(0f, 1f);
+            borderRt.pivot = new Vector2(0f, 1f);
+            borderRt.anchoredPosition = new Vector2(30f, -70f);
+            // Make the border slightly larger than the portrait (5px on each side)
+            borderRt.sizeDelta = new Vector2(138f, 138f);
+            try { portraitBorderGO.transform.SetParent(cardRoot.transform, false); portraitBorderGO.transform.SetSiblingIndex(1); } catch { }
+            
             // Portrait (bigger) - fixed to top-left
             var portraitGO = UIFactory.CreateUIObject("Emp_Portrait", root);
             portrait = portraitGO.AddComponent<RawImage>();
@@ -609,10 +622,11 @@ namespace BackInBusiness
             pRt.anchorMin = new Vector2(0f, 1f);
             pRt.anchorMax = new Vector2(0f, 1f);
             pRt.pivot = new Vector2(0f, 1f);
-            pRt.anchoredPosition = new Vector2(20f, -70f);
+            // Center the portrait on the border
+            pRt.anchoredPosition = new Vector2(30f + 5f, -70f - 5f);
             pRt.sizeDelta = new Vector2(128f, 128f);
-            // Parent inside the card for consistent clipping; keep it below text by not being the last sibling
-            try { portraitGO.transform.SetParent(cardRoot.transform, false); portraitGO.transform.SetSiblingIndex(1); } catch { }
+            // Parent inside the card and set to be above the border but below text
+            try { portraitGO.transform.SetParent(cardRoot.transform, false); portraitGO.transform.SetSiblingIndex(2); } catch { }
 
             // Name - fixed offsets from top-left
             nameText = UIFactory.CreateLabel(root, "Emp_Name", "Name", TextAnchor.UpperLeft);
@@ -637,7 +651,7 @@ namespace BackInBusiness
             jobRt.anchorMin = new Vector2(0f, 1f);
             jobRt.anchorMax = new Vector2(0f, 1f);
             jobRt.pivot = new Vector2(0f, 1f);
-            jobRt.anchoredPosition = new Vector2(20f + 128f + 12f, -30f - 40f);
+            jobRt.anchoredPosition = new Vector2(30f + 128f + 12f, -30f - 40f);
             jobRt.sizeDelta = new Vector2(380f, 22f);
             // Font size and color
             jobText.fontSize = 14;
@@ -650,7 +664,7 @@ namespace BackInBusiness
             salRt.anchorMin = new Vector2(0f, 1f);
             salRt.anchorMax = new Vector2(0f, 1f);
             salRt.pivot = new Vector2(0f, 1f);
-            salRt.anchoredPosition = new Vector2(20f + 128f + 12f, -30f - 40f - 24f);
+            salRt.anchoredPosition = new Vector2(30f + 128f + 12f, -30f - 40f - 24f);
             salRt.sizeDelta = new Vector2(380f, 22f);
             // Font size and color
             salaryText.fontSize = 14;
