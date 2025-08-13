@@ -456,6 +456,7 @@ namespace BackInBusiness
         private TextMeshProUGUI jobText; // Changed to TextMeshProUGUI
         private TextMeshProUGUI salaryText; // Changed to TextMeshProUGUI
         private TextMeshProUGUI workRotaText; // Added for work schedule display
+        private TextMeshProUGUI homeAddressText; // Added for home address display
         private ButtonRef fireButton;
         private ButtonRef changeRoleButton;
         public event Action CloseRequested;
@@ -880,6 +881,26 @@ namespace BackInBusiness
                 
                 // Make sure it's at the right position in sibling order
                 try { workRotaText.transform.SetAsLastSibling(); } catch { }
+                
+                // ---------------------
+                // Home Address anchored to BIB_ContentsPage (the actual GameObject with Image component)
+                homeAddressText = CreateTMP(bibContentsPage, "Emp_HomeAddress", "Home Address", TextAlignmentOptions.TopLeft);
+                var addressRt = homeAddressText.GetComponent<RectTransform>();
+                addressRt.anchorMin = new Vector2(0f, 1f);
+                addressRt.anchorMax = new Vector2(0f, 1f);
+                addressRt.pivot = new Vector2(0f, 1f);
+                addressRt.anchoredPosition = new Vector2(80f + 128f + 12f, -40f - 24f - 22f - 22f); // Position below work rota text
+                addressRt.sizeDelta = new Vector2(380f, 22f);
+                // Font size and color
+                homeAddressText.fontSize = 14f;
+                homeAddressText.color = Color.black;
+                
+                // Log the hierarchy path for debugging
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Home Address created with path: {GetGameObjectPath(homeAddressText.gameObject)}");
+                Plugin.Logger.LogInfo($"EmployeeDetailsView: Home Address parent is: {homeAddressText.transform.parent?.name ?? "null"}");
+                
+                // Make sure it's at the right position in sibling order
+                try { homeAddressText.transform.SetAsLastSibling(); } catch { }
 
                 // Title area remains parented to cardRoot so it can span full width for dragging and name label
             }
@@ -1310,18 +1331,44 @@ namespace BackInBusiness
                 salaryText.text = salaryStr;
                 
                 // Work Rota from Occupation if available
-                string workRotaStr = "Work Schedule: N/A";
                 try
                 {
                     if (occ != null)
                     {
                         string workingHours = occ.GetWorkingHoursString();
-                        if (!string.IsNullOrEmpty(workingHours))
-                            workRotaStr = $"Work Schedule: {workingHours}";
+                        workRotaText.text = !string.IsNullOrEmpty(workingHours) ? $"Work Schedule: {workingHours}" : "Work Schedule: N/A";
+                        Plugin.Logger.LogInfo($"EmployeeDetailsView: Work Rota set to '{workRotaText.text}'");
+                    }
+                    else
+                    {
+                        workRotaText.text = "Work Schedule: N/A";
                     }
                 }
-                catch { }
-                workRotaText.text = workRotaStr;
+                catch (Exception ex)
+                {
+                    Plugin.Logger.LogError($"EmployeeDetailsView: Error setting work rota text: {ex.Message}");
+                    workRotaText.text = "Work Schedule: Error";
+                }
+                
+                // Set home address text if available
+                try
+                {
+                    if (citizen != null && citizen.home != null)
+                    {
+                        string address = citizen.home?.thisAsAddress?.name?.ToString() ?? "Unknown";
+                        homeAddressText.text = $"Home Address: {address}";
+                        Plugin.Logger.LogInfo($"EmployeeDetailsView: Home Address set to '{homeAddressText.text}'");
+                    }
+                    else
+                    {
+                        homeAddressText.text = "Home Address: N/A";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Logger.LogError($"EmployeeDetailsView: Error setting home address text: {ex.Message}");
+                    homeAddressText.text = "Home Address: Error";
+                }
                 
                 try { Canvas.ForceUpdateCanvases(); } catch { }
                 // Log rects
