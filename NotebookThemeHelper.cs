@@ -243,9 +243,23 @@ namespace BackInBusiness
                     img.sprite = BackgroundSprite;
                     img.type = Image.Type.Sliced;
                     img.preserveAspect = false;
+                    var col = img.color; col.a = 1f; img.color = col;
                     try { Plugin.Logger.LogInfo("NotebookThemeHelper: Background from Sprite fallback path"); } catch { }
                 }
                 inst.name = "BIB_Background";
+                // Apply dark grey tint (almost black) to the background visual
+                try {
+                    var imgBg = inst.GetComponent<Image>();
+                    if (imgBg != null)
+                    {
+                        imgBg.color = new Color(0.10f, 0.10f, 0.10f, 1f); // very dark grey
+                    }
+                    else
+                    {
+                        var raw = inst.GetComponent<RawImage>();
+                        if (raw != null) raw.color = new Color(0.10f, 0.10f, 0.10f, 1f);
+                    }
+                } catch { }
                 var rt = inst.GetComponent<RectTransform>();
                 if (rt == null) rt = inst.AddComponent<RectTransform>();
                 
@@ -312,6 +326,142 @@ namespace BackInBusiness
                     try { Plugin.Logger.LogInfo("NotebookThemeHelper: MaskPattern from Sprite fallback path"); } catch { }
                 }
                 inst.name = "BIB_MaskPattern";
+                // Use the same approach as the game's Detective's Notebook
+                try {
+                    // We want a very dark color for the pattern
+                    Color almostBlack = new Color(0.05f, 0.05f, 0.05f, 1f);
+                    
+                    // First, check if we need to fix the Image component settings
+                    var rootImg = inst.GetComponent<Image>();
+                    if (rootImg != null) 
+                    {
+                        // Keep original sprite but make it almost black
+                        rootImg.color = almostBlack;
+                        rootImg.preserveAspect = false;
+                        
+                        // Make sure we're using the right Image type for proper corners
+                        if (rootImg.sprite != null)
+                        {
+                            // Try to match the game's Detective's Notebook settings
+                            rootImg.type = Image.Type.Sliced;
+                            Plugin.Logger?.LogInfo($"MaskPattern sprite: {rootImg.sprite.name}, set type to Sliced");
+                        }
+                    }
+                    
+                    var rootRaw = inst.GetComponent<RawImage>();
+                    if (rootRaw != null)
+                    {
+                        rootRaw.color = almostBlack;
+                        Plugin.Logger?.LogInfo($"MaskPattern RawImage tinted almost black");
+                    }
+                    
+                        // Find the Pattern child if it exists
+                    Transform patternChild = inst.transform.Find("Pattern");
+                    
+                    // Create a custom rounded border frame with paper-like appearance
+                    GameObject borderFrame = new GameObject("RoundedBorder");
+                    borderFrame.transform.SetParent(inst.transform, false);
+                    
+                    var borderRt = borderFrame.AddComponent<RectTransform>();
+                    borderRt.anchorMin = Vector2.zero;
+                    borderRt.anchorMax = Vector2.one;
+                    // Make the border larger than the content to create a visible frame
+                    // Extend further at the top and bottom to ensure proper spacing
+                    borderRt.offsetMin = new Vector2(-8f, -8f); // Increased bottom and side margins
+                    borderRt.offsetMax = new Vector2(8f, 16f); // Increased top and side margins
+                    
+                    // Add a custom border image with rounded corners
+                    var borderImg = borderFrame.AddComponent<Image>();
+                    
+                    // Create a custom rounded rectangle sprite with larger radius
+                    Texture2D roundedTexture = CreateRoundedRectTexture(128, 128, 30);
+                    borderImg.sprite = Sprite.Create(roundedTexture, new Rect(0, 0, roundedTexture.width, roundedTexture.height), 
+                                                   new Vector2(0.5f, 0.5f), 100f, 1, SpriteMeshType.FullRect, 
+                                                   new Vector4(30, 30, 30, 30)); // Border sizes for 9-slice
+                    borderImg.type = Image.Type.Sliced;
+                    // Use a color similar to the Detective's Notebook paper edge
+                    borderImg.color = new Color(0.45f, 0.4f, 0.35f, 1f); // Darker paper color
+                    Plugin.Logger?.LogInfo("NotebookThemeHelper: Created custom rounded corner border");
+                    
+                    // Create a dark background inside the border
+                    GameObject darkBg = new GameObject("DarkBackground");
+                    darkBg.transform.SetParent(inst.transform, false);
+                    // Set dark background to be at the back (lowest sibling index)
+                    darkBg.transform.SetAsFirstSibling();
+                    
+                    var darkBgRt = darkBg.AddComponent<RectTransform>();
+                    darkBgRt.anchorMin = Vector2.zero;
+                    darkBgRt.anchorMax = Vector2.one;
+                    // Extend the dark background to match the border but with a small margin
+                    darkBgRt.offsetMin = new Vector2(-4f, -4f);
+                    darkBgRt.offsetMax = new Vector2(4f, 12f); // Extra height at top with small margin
+                    
+                    var darkBgImg = darkBg.AddComponent<Image>();
+                    
+                    // Create a custom rounded rectangle for the dark background too
+                    // Use slightly smaller radius for inner background
+                    Texture2D innerRoundedTexture = CreateRoundedRectTexture(128, 128, 28);
+                    darkBgImg.sprite = Sprite.Create(innerRoundedTexture, 
+                                                   new Rect(0, 0, innerRoundedTexture.width, innerRoundedTexture.height), 
+                                                   new Vector2(0.5f, 0.5f), 100f, 1, SpriteMeshType.FullRect, 
+                                                   new Vector4(28, 28, 28, 28)); // Border sizes for 9-slice
+                    darkBgImg.type = Image.Type.Sliced;
+                    darkBgImg.color = new Color(0.05f, 0.05f, 0.05f, 1f); // Almost black
+                    Plugin.Logger?.LogInfo("NotebookThemeHelper: Created dark background with rounded corners");
+                    
+                    darkBgImg.raycastTarget = false;
+                    
+                    // If we have a pattern child, make it black and ensure it doesn't extend beyond the border
+                    if (patternChild != null)
+                    {
+                        // Adjust the pattern's RectTransform to stay within the border
+                        var patternRt = patternChild.GetComponent<RectTransform>();
+                        if (patternRt != null)
+                        {
+                            // Make the pattern significantly smaller than the dark background to avoid drawing into the border
+                            patternRt.anchorMin = Vector2.zero;
+                            patternRt.anchorMax = Vector2.one;
+                            patternRt.offsetMin = new Vector2(0f, 0f);
+                            patternRt.offsetMax = new Vector2(0f, 0f); // Keep pattern within the original bounds
+                            Plugin.Logger?.LogInfo("NotebookThemeHelper: Adjusted pattern size to stay within border");
+                        }
+                        
+                        var patternImg = patternChild.GetComponent<Image>();
+                        if (patternImg != null)
+                        {
+                            // Try to preserve the texture but make it black
+                            patternImg.color = new Color(0.05f, 0.05f, 0.05f, 1f);
+                            Plugin.Logger?.LogInfo("NotebookThemeHelper: Set Pattern image to black");
+                            
+                            // Log more details about the pattern
+                            if (patternImg.sprite != null)
+                            {
+                                Plugin.Logger?.LogInfo($"Pattern child sprite: {patternImg.sprite.name}, type: {patternImg.type}");
+                            }
+                        }
+                        
+                        var patternRaw = patternChild.GetComponent<RawImage>();
+                        if (patternRaw != null)
+                        {
+                            patternRaw.color = new Color(0.05f, 0.05f, 0.05f, 1f);
+                            Plugin.Logger?.LogInfo("NotebookThemeHelper: Set Pattern raw image to black");
+                            
+                            // Log more details about the pattern
+                            if (patternRaw.texture != null)
+                            {
+                                Plugin.Logger?.LogInfo($"Pattern child texture: {patternRaw.texture.name}");
+                            }
+                        }
+                    }
+                    
+                    Plugin.Logger?.LogInfo("NotebookThemeHelper: Applied dark styling to pattern");
+                    
+                    // Move the border back to the first position (behind everything)
+                    borderFrame.transform.SetAsFirstSibling();
+                    // Move the dark background to be just above the border
+                    darkBg.transform.SetSiblingIndex(1);
+                    Plugin.Logger?.LogInfo("NotebookThemeHelper: Set border at the back with dark background above it");
+                } catch (Exception ex) { Plugin.Logger?.LogError($"Error replacing pattern: {ex.Message}"); }
                 var rt = inst.GetComponent<RectTransform>();
                 if (rt == null) rt = inst.AddComponent<RectTransform>();
                 
@@ -405,5 +555,79 @@ namespace BackInBusiness
         }
         
         // Second GetPath method removed to avoid duplication
+        
+        /// <summary>
+        /// Creates a texture with rounded corners for UI elements
+        /// </summary>
+        private static Texture2D CreateRoundedRectTexture(int width, int height, int radius)
+        {
+            Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            Color[] colors = new Color[width * height];
+            
+            // Fill with transparent pixels initially
+            for (int i = 0; i < colors.Length; i++)
+                colors[i] = Color.clear;
+            
+            // Fill the center with white (will be tinted by Image.color)
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    // Check if pixel is inside rounded rectangle
+                    if (IsInsideRoundedRect(x, y, width, height, radius))
+                    {
+                        colors[y * width + x] = Color.white;
+                    }
+                }
+            }
+            
+            texture.SetPixels(colors);
+            texture.Apply();
+            return texture;
+        }
+        
+        /// <summary>
+        /// Determines if a point is inside a rounded rectangle
+        /// </summary>
+        private static bool IsInsideRoundedRect(int x, int y, int width, int height, int radius)
+        {
+            // Points inside the main rectangle (not in corner regions)
+            if (x >= radius && x <= width - radius && y >= 0 && y <= height)
+                return true;
+            if (y >= radius && y <= height - radius && x >= 0 && x <= width)
+                return true;
+                
+            // Check corners - we need to check if the point is OUTSIDE the corner circles
+            // For each corner, we check if the distance from the point to the corner center is greater than radius
+            
+            // Top-left corner
+            if (x < radius && y < radius)
+            {
+                float distanceFromCorner = Mathf.Sqrt((x - radius) * (x - radius) + (y - radius) * (y - radius));
+                return distanceFromCorner <= radius;
+            }
+            // Top-right corner
+            else if (x > width - radius && y < radius)
+            {
+                float distanceFromCorner = Mathf.Sqrt((x - (width - radius)) * (x - (width - radius)) + (y - radius) * (y - radius));
+                return distanceFromCorner <= radius;
+            }
+            // Bottom-left corner
+            else if (x < radius && y > height - radius)
+            {
+                float distanceFromCorner = Mathf.Sqrt((x - radius) * (x - radius) + (y - (height - radius)) * (y - (height - radius)));
+                return distanceFromCorner <= radius;
+            }
+            // Bottom-right corner
+            else if (x > width - radius && y > height - radius)
+            {
+                float distanceFromCorner = Mathf.Sqrt((x - (width - radius)) * (x - (width - radius)) + (y - (height - radius)) * (y - (height - radius)));
+                return distanceFromCorner <= radius;
+            }
+            
+            return false;
+        }
+        
+        // Helper method removed as calculations are now done directly in IsInsideRoundedRect
     }
 }
