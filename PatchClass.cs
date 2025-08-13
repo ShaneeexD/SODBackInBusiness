@@ -10,6 +10,7 @@ using UniverseLib;
 using UniverseLib.Config;
 using SOD.Common; // For Lib
 using SOD.Common.Helpers; // For Lib.SaveGame (potentially, or other helpers)
+using Il2CppInterop.Runtime.Injection;
 
 namespace BackInBusiness
 {
@@ -91,6 +92,18 @@ namespace BackInBusiness
             
             var harmony = new Harmony(PLUGIN_GUID);
             harmony.PatchAll(Assembly.GetExecutingAssembly());
+            
+            // Register managed MonoBehaviours for IL2CPP so AddComponent<T>() works
+            try
+            {
+                ClassInjector.RegisterTypeInIl2Cpp<BackInBusiness.BIBButtonController>();
+                Logger.LogInfo("Registered Il2Cpp type: BIBButtonController");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to register BIBButtonController: {ex}");
+            }
+            // CloseButtonAdapter is deprecated in favor of BIBButtonController
             
             // Initialize UniverseLib first
             Logger.LogInfo("Initializing UniverseLib...");
