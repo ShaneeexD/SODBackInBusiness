@@ -23,11 +23,16 @@ namespace BackInBusiness
         public bool AdditionalHighlightAtFront = true;
         public Color AdditionalHighlightColour = new Color(1f, 1f, 1f, 1f);
         public Color AdditionalHighlightUninteractableColour = Color.gray;
+        // Insets for sizing the highlight relative to its parent (left, top, right, bottom)
+        // Negative values expand beyond parent edges, positive values shrink inside parent edges
+        public Vector4 AdditionalHighlightRectModifier = new Vector4(-12f, -12f, -12f, -12f);
         // Base transform adjustments applied via a wrapper so the in-game animation (which changes localScale) is preserved
-        public Vector3 AdditionalHighlightLocalPositionOffset = new Vector3(-18.3509f, -17.9055f, 0f);
-        public float AdditionalHighlightScaleMultiplier = 1.6f;
+        public Vector3 AdditionalHighlightLocalPositionOffset = new Vector3(0f, 0f, 0f);
+        public float AdditionalHighlightScaleMultiplier = 1.0f;
         public bool ForceWrapperOffsetEachFrame = true;
+        public bool ForceRectSizeEachFrame = true;
         public bool ForceOpaqueHighlight = true;
+        public bool VerboseHighlightLogs = false;
 
         private bool _hovered, _pressed, _interactable = true;
         private Color _origColor;
@@ -170,6 +175,9 @@ namespace BackInBusiness
                     var img = go.GetComponent<Image>();
                     if (img == null) img = go.AddComponent<Image>();
                     img.color = AdditionalHighlightColour;
+                    // For fallback, use a proper 9-slice sprite with small corners
+                    img.type = Image.Type.Sliced;
+                    img.pixelsPerUnitMultiplier = 1.0f;
                     img.raycastTarget = false;
                     try { Plugin.Logger?.LogInfo("[BIBButtonController] Created fallback AdditionalHighlight overlay."); } catch { }
                 }
@@ -196,7 +204,29 @@ namespace BackInBusiness
                 var rt = go.GetComponent<RectTransform>();
                 if (rt == null) rt = go.AddComponent<RectTransform>();
                 rt.SetParent(wrapperRT, false);
-                // Keep original anchors/pivot from the prefab; only zero localPosition so wrapper controls offset/scale
+                // Stretch to parent and apply game-style insets via Toolbox.SetRectSize(left, top, right, bottom)
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                // Ensure the Image is set to Sliced type for proper corner rendering
+                var rtImage = rt.GetComponent<Image>();
+                if (rtImage != null)
+                {
+                    rtImage.type = Image.Type.Sliced;
+                    // Set sprite pixels per unit to match game's UI scale
+                    rtImage.pixelsPerUnitMultiplier = 1.0f;
+                }
+                try
+                {
+                    if (Toolbox.Instance != null)
+                    {
+                        Toolbox.Instance.SetRectSize(rt,
+                            AdditionalHighlightRectModifier.x,
+                            AdditionalHighlightRectModifier.y,
+                            AdditionalHighlightRectModifier.z,
+                            AdditionalHighlightRectModifier.w);
+                    }
+                }
+                catch { }
                 rt.localPosition = Vector3.zero;
                 rt.localScale = Vector3.one; // animated by game controller if present
 
@@ -277,7 +307,16 @@ namespace BackInBusiness
                     }
                     catch { }
                     _highlightRect.gameObject.SetActive(true);
-                    try { Plugin.Logger?.LogInfo("[BIBButtonController] Highlight enabled (hover)"); } catch { }
+                    try
+                    {
+                        Plugin.Logger?.LogInfo("[BIBButtonController] Highlight enabled (hover)");
+                        if (VerboseHighlightLogs && _highlightRect != null)
+                        {
+                            var rt = _highlightRect;
+                            Plugin.Logger?.LogInfo($"[BIBButtonController] rt.anchorMin={rt.anchorMin} anchorMax={rt.anchorMax} offsetMin={rt.offsetMin} offsetMax={rt.offsetMax} sizeDelta={rt.sizeDelta} parentSize={(TargetTransform!=null?TargetTransform.rect.size:Vector2.zero)} insets(L,T,R,B)=({AdditionalHighlightRectModifier.x},{AdditionalHighlightRectModifier.y},{AdditionalHighlightRectModifier.z},{AdditionalHighlightRectModifier.w})");
+                        }
+                    }
+                    catch { }
                 }
             }
             else
@@ -299,6 +338,30 @@ namespace BackInBusiness
                 {
                     _highlightWrapper.anchoredPosition3D = AdditionalHighlightLocalPositionOffset;
                     _highlightWrapper.anchoredPosition = new Vector2(AdditionalHighlightLocalPositionOffset.x, AdditionalHighlightLocalPositionOffset.y);
+                    // Keep wrapper size tracking parent button so child stretch + insets behave consistently
+                    if (TargetTransform != null)
+                    {
+                        _highlightWrapper.sizeDelta = TargetTransform.rect.size;
+                    }
+                }
+                // Allow live tweaking of insets in the inspector during play by reapplying each frame
+                if (ForceRectSizeEachFrame && _highlightRect != null)
+                {
+                    _highlightRect.anchorMin = Vector2.zero;
+                    _highlightRect.anchorMax = Vector2.one;
+                    if (Toolbox.Instance != null)
+                    {
+                        Toolbox.Instance.SetRectSize(_highlightRect,
+                            AdditionalHighlightRectModifier.x,
+                            AdditionalHighlightRectModifier.y,
+                            AdditionalHighlightRectModifier.z,
+                            AdditionalHighlightRectModifier.w);
+                    }
+                    if (VerboseHighlightLogs && (Time.frameCount % 15 == 0))
+                    {
+                        var rt = _highlightRect;
+                        try { Plugin.Logger?.LogInfo($"[BIBButtonController] (LateUpdate) rt.anchorMin={rt.anchorMin} anchorMax={rt.anchorMax} offsetMin={rt.offsetMin} offsetMax={rt.offsetMax} sizeDelta={rt.sizeDelta} parentSize={(TargetTransform!=null?TargetTransform.rect.size:Vector2.zero)} insets(L,T,R,B)=({AdditionalHighlightRectModifier.x},{AdditionalHighlightRectModifier.y},{AdditionalHighlightRectModifier.z},{AdditionalHighlightRectModifier.w})"); } catch { }
+                    }
                 }
             }
             catch { }
