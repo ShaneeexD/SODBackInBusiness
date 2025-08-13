@@ -605,7 +605,7 @@ namespace BackInBusiness
             // White border box for portrait
             var portraitBorderGO = UIFactory.CreateUIObject("Emp_PortraitBorder", root);
             var borderImage = portraitBorderGO.AddComponent<Image>();
-            borderImage.color = Color.white;
+            borderImage.color = Color.gray;
             var borderRt = portraitBorderGO.GetComponent<RectTransform>();
             borderRt.anchorMin = new Vector2(0f, 1f);
             borderRt.anchorMax = new Vector2(0f, 1f);
@@ -651,7 +651,7 @@ namespace BackInBusiness
             jobRt.anchorMin = new Vector2(0f, 1f);
             jobRt.anchorMax = new Vector2(0f, 1f);
             jobRt.pivot = new Vector2(0f, 1f);
-            jobRt.anchoredPosition = new Vector2(30f + 128f + 12f, -30f - 40f);
+            jobRt.anchoredPosition = new Vector2(40f + 128f + 12f, -30f - 40f);
             jobRt.sizeDelta = new Vector2(380f, 22f);
             // Font size and color
             jobText.fontSize = 14;
@@ -664,7 +664,7 @@ namespace BackInBusiness
             salRt.anchorMin = new Vector2(0f, 1f);
             salRt.anchorMax = new Vector2(0f, 1f);
             salRt.pivot = new Vector2(0f, 1f);
-            salRt.anchoredPosition = new Vector2(30f + 128f + 12f, -30f - 40f - 24f);
+            salRt.anchoredPosition = new Vector2(40f + 128f + 12f, -30f - 40f - 24f);
             salRt.sizeDelta = new Vector2(380f, 22f);
             // Font size and color
             salaryText.fontSize = 14;
@@ -707,6 +707,13 @@ namespace BackInBusiness
                             controller.UseAdditionalHighlight = true;
                             controller.AdditionalHighlightAtFront = true;
                             controller.AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
+                            
+                            // Configure button sound settings for close button
+                            controller.useGenericAudioSounds = false; // Use custom audio events instead of generic ones
+                            controller.isCloseButton = true; // Special flag to play both close and page sounds
+                            controller.buttonDown = AudioControls.Instance.panelIconButton; // Button down sound
+                            controller.clickPrimary = AudioControls.Instance.closeButton; // Close button sound
+                            controller.clickSecondary = AudioControls.Instance.tab; // Page/back sound
                         }
                         catch { }
                         if (controller.TargetImage == null)
