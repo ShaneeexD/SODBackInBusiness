@@ -8,6 +8,7 @@ using UniverseLib.UI;
 using UniverseLib.UI.Models;
 using SOD.Common;
 using Il2CppInterop.Runtime;
+using TMPro; // Added for TextMeshPro support
 
 namespace BackInBusiness
 {
@@ -450,11 +451,58 @@ namespace BackInBusiness
         private GameObject root;
         private RawImage portrait;
         private Text nameText;
-        private Text jobText;
-        private Text salaryText;
+        private TextMeshProUGUI jobText; // Changed to TextMeshProUGUI
+        private TextMeshProUGUI salaryText; // Changed to TextMeshProUGUI
         private ButtonRef fireButton;
         private ButtonRef changeRoleButton;
         public event Action CloseRequested;
+
+        // Helper method to create TextMeshProUGUI components with the game's font
+        private TextMeshProUGUI CreateTMP(GameObject parent, string name, string text, TextAlignmentOptions alignment)
+        {
+            GameObject obj = new GameObject(name);
+            obj.transform.SetParent(parent.transform, false);
+            TextMeshProUGUI tmp = obj.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.alignment = alignment;
+            tmp.enableWordWrapping = false;
+            tmp.overflowMode = TextOverflowModes.Overflow;
+            
+            // Find and apply the TruetypewriterPolyglott SDF font
+            try
+            {
+                // Search for the font asset by name
+                var fonts = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();
+                TMP_FontAsset gameFont = null;
+                
+                // IL2CPP compatible loop (no LINQ)
+                for (int i = 0; i < fonts.Length; i++)
+                {
+                    var font = fonts[i];
+                    if (font != null && font.name != null && font.name.Contains("TruetypewriterPolyglott SDF"))
+                    {
+                        gameFont = font;
+                        break;
+                    }
+                }
+                
+                if (gameFont != null)
+                {
+                    tmp.font = gameFont;
+                    Plugin.Logger.LogInfo($"Applied TruetypewriterPolyglott SDF font to {name}");
+                }
+                else
+                {
+                    Plugin.Logger.LogWarning($"Could not find TruetypewriterPolyglott SDF font for {name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger.LogError($"Error applying font to {name}: {ex.Message}");
+            }
+            
+            return tmp;
+        }
 
         public void Build(GameObject parent)
         {
@@ -584,25 +632,27 @@ namespace BackInBusiness
             try { nameText.transform.SetParent(cardRoot.transform, false); nameText.transform.SetAsLastSibling(); } catch { }
 
             // Job title - fixed below name
-            jobText = UIFactory.CreateLabel(root, "Emp_Job", "Job", TextAnchor.UpperLeft);
+            jobText = CreateTMP(root, "Emp_Job", "Job", TextAlignmentOptions.TopLeft);
             var jobRt = jobText.GetComponent<RectTransform>();
             jobRt.anchorMin = new Vector2(0f, 1f);
             jobRt.anchorMax = new Vector2(0f, 1f);
             jobRt.pivot = new Vector2(0f, 1f);
             jobRt.anchoredPosition = new Vector2(20f + 128f + 12f, -30f - 40f);
             jobRt.sizeDelta = new Vector2(380f, 22f);
+            // Font size and color
             jobText.fontSize = 14;
             jobText.color = Color.black;
             try { jobText.transform.SetParent(cardRoot.transform, false); jobText.transform.SetAsLastSibling(); } catch { }
 
             // Salary - fixed below job
-            salaryText = UIFactory.CreateLabel(root, "Emp_Salary", "Salary", TextAnchor.UpperLeft);
+            salaryText = CreateTMP(root, "Emp_Salary", "Salary", TextAlignmentOptions.TopLeft);
             var salRt = salaryText.GetComponent<RectTransform>();
             salRt.anchorMin = new Vector2(0f, 1f);
             salRt.anchorMax = new Vector2(0f, 1f);
             salRt.pivot = new Vector2(0f, 1f);
             salRt.anchoredPosition = new Vector2(20f + 128f + 12f, -30f - 40f - 24f);
             salRt.sizeDelta = new Vector2(380f, 22f);
+            // Font size and color
             salaryText.fontSize = 14;
             salaryText.color = Color.black;
             try { salaryText.transform.SetParent(cardRoot.transform, false); salaryText.transform.SetAsLastSibling(); } catch { }
