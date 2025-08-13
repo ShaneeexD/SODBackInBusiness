@@ -825,8 +825,10 @@ namespace BackInBusiness
                 // Create a new GameObject for our ContentsPage
                 GameObject inst = new GameObject("BIB_ContentsPage");
                 
-                // Add an Image component
+                // Add an Image component with settings to prevent stretching artifacts
                 var contentsImage = inst.AddComponent<Image>();
+                contentsImage.preserveAspect = true; // Preserve aspect ratio
+                contentsImage.type = Image.Type.Simple; // Use simple type instead of sliced
                 
                 // Use the sprite from the template if available
                 if (IsAlive(ContentsPageTemplate))
@@ -834,12 +836,16 @@ namespace BackInBusiness
                     var templateImg = ContentsPageTemplate.GetComponent<Image>();
                     if (templateImg != null && templateImg.sprite != null)
                     {
-                        // Copy all properties exactly from the original
+                        // Copy the sprite and color from the original, but use fixed settings for other properties
                         contentsImage.sprite = templateImg.sprite;
-                        contentsImage.type = templateImg.type;
                         contentsImage.color = templateImg.color;
                         contentsImage.material = templateImg.material;
-                        contentsImage.preserveAspect = templateImg.preserveAspect;
+                        
+                        // Override specific properties to ensure no stretching artifacts
+                        contentsImage.type = Image.Type.Simple; // Use simple type instead of sliced
+                        contentsImage.preserveAspect = true; // Always preserve aspect ratio
+                        
+                        // Copy remaining properties
                         contentsImage.fillCenter = templateImg.fillCenter;
                         contentsImage.fillMethod = templateImg.fillMethod;
                         contentsImage.fillAmount = templateImg.fillAmount;
@@ -863,14 +869,18 @@ namespace BackInBusiness
                     contentsImage.color = new Color(0.9f, 0.85f, 0.8f, 1f); // Light paper color
                 }
                 
-                // Set up the RectTransform - make it slightly smaller than the container
+                // Set up the RectTransform with a fixed size to avoid stretching artifacts
                 var rt = inst.GetComponent<RectTransform>();
                 if (rt == null) rt = inst.AddComponent<RectTransform>();
-                rt.anchorMin = Vector2.zero;
-                rt.anchorMax = Vector2.one;
-                // Add small margins to make it slightly smaller than the container
-                rt.offsetMin = new Vector2(5f, 5f);
-                rt.offsetMax = new Vector2(-5f, -5f);
+                
+                // Use center anchoring with fixed size instead of stretching
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                
+                // Set a fixed size that matches the original notebook page
+                rt.sizeDelta = new Vector2(450f, 500f); // Fixed size based on the original notebook page
+                rt.anchoredPosition = Vector2.zero; // Center in parent
                 
                 // Disable raycast target to prevent blocking interactions
                 contentsImage.raycastTarget = false;
