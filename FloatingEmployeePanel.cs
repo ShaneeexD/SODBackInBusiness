@@ -82,11 +82,54 @@ namespace BackInBusiness
         {
             try
             {
-                // Opaque background for content area is handled by the panel; ensure our inner content fills below header
+                // Make the panel background completely transparent
+                try
+                {
+                    // Find and hide the panel's background elements
+                    var panelBg = ContentRoot.transform.parent.Find("Background");
+                    if (panelBg != null)
+                    {
+                        panelBg.gameObject.SetActive(false);
+                    }
+                    
+                    // Hide the title bar background
+                    var titleBar = TitleBar;
+                    if (titleBar != null)
+                    {
+                        var titleBg = titleBar.transform.Find("Background");
+                        if (titleBg != null)
+                        {
+                            titleBg.gameObject.SetActive(false);
+                        }
+                    }
+                    
+                    // Hide the minimize button if it exists
+                    try
+                    {
+                        var headerTransform = TitleBar;
+                        if (headerTransform != null)
+                        {
+                            var minimizeBtn = headerTransform.transform.Find("MinimizeButton");
+                            if (minimizeBtn != null)
+                            {
+                                minimizeBtn.gameObject.SetActive(false);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Logger.LogError($"Error hiding panel elements: {ex.Message}");
+                }
+                
+                // Create content container that fills the entire panel
                 GameObject content = UIFactory.CreateUIObject("EmpPanelContent", ContentRoot);
                 RectTransform contentRt = content.GetComponent<RectTransform>();
-                contentRt.anchorMin = new Vector2(0.02f, 0.04f);
-                contentRt.anchorMax = new Vector2(0.98f, 0.92f);
+                
+                // Make content fill the entire panel, not just below header
+                contentRt.anchorMin = new Vector2(0, 0);
+                contentRt.anchorMax = new Vector2(1, 1);
                 contentRt.offsetMin = Vector2.zero;
                 contentRt.offsetMax = Vector2.zero;
                 var le = content.GetComponent<LayoutElement>();
@@ -194,17 +237,8 @@ namespace BackInBusiness
                 _view.Show(citizenArg ?? _citizen, occArg ?? _occupation, addrArg, rosterIdx);
                 try { _view.BringToFront(); } catch { }
 
-                // Optional: add a small Close button inside content for redundancy
-                var closeBtn = UIFactory.CreateButton(ContentRoot, "EmpPanelClose", "Close");
-                closeBtn.ButtonText.fontSize = 12;
-                RectTransform closeRt = closeBtn.Component.GetComponent<RectTransform>();
-                closeRt.anchorMin = new Vector2(0.86f, 0.93f);
-                closeRt.anchorMax = new Vector2(0.97f, 0.98f);
-                closeRt.offsetMin = Vector2.zero;
-                closeRt.offsetMax = Vector2.zero;
-                closeBtn.OnClick += () => {
-                    try { SetActive(false); } catch { }
-                };
+                // We don't need the redundant close button since we're using the game-styled one in EmployeeDetailsView
+                // and we've hidden the UniverseLib panel elements
             }
             catch (Exception ex)
             {

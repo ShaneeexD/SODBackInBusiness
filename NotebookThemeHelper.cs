@@ -1,7 +1,9 @@
 using System;
+using System.Linq; // Added for LINQ operations
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using TMPro; // Added for TextMeshProUGUI
 
 namespace BackInBusiness
 {
@@ -469,23 +471,72 @@ namespace BackInBusiness
                     var borderRt = borderFrame.AddComponent<RectTransform>();
                     borderRt.anchorMin = Vector2.zero;
                     borderRt.anchorMax = Vector2.one;
-                    // Make the border larger than the content to create a visible frame
-                    // Extend further at the top and bottom to ensure proper spacing
-                    borderRt.offsetMin = new Vector2(-8f, -8f); // Increased bottom and side margins
-                    borderRt.offsetMax = new Vector2(8f, 16f); // Increased top and side margins
+                    // Inset the border inside the parent to avoid being clipped by ancestor masks
+                    // Keep a consistent frame all around
+                    borderRt.offsetMin = new Vector2(8f, 8f);
+                    borderRt.offsetMax = new Vector2(-8f, -8f);
                     
-                    // Add a custom border image with rounded corners
+                    // Add a border image with rounded corners
                     var borderImg = borderFrame.AddComponent<Image>();
-                    
-                    // Create a custom rounded rectangle sprite with larger radius
-                    Texture2D roundedTexture = CreateRoundedRectTexture(128, 128, 30);
-                    borderImg.sprite = Sprite.Create(roundedTexture, new Rect(0, 0, roundedTexture.width, roundedTexture.height), 
-                                                   new Vector2(0.5f, 0.5f), 100f, 1, SpriteMeshType.FullRect, 
-                                                   new Vector4(30, 30, 30, 30)); // Border sizes for 9-slice
-                    borderImg.type = Image.Type.Sliced;
-                    // Use a color similar to the Detective's Notebook paper edge
-                    borderImg.color = new Color(0.45f, 0.4f, 0.35f, 1f); // Darker paper color
-                    Plugin.Logger?.LogInfo("NotebookThemeHelper: Created custom rounded corner border");
+
+                    // Local deep-search helper
+                    Transform FindDeep(Transform root, string target)
+                    {
+                        if (root == null) return null;
+                        if (string.Equals(root.name, target, StringComparison.Ordinal)) return root;
+                        for (int i = 0; i < root.childCount; i++)
+                        {
+                            var c = root.GetChild(i);
+                            var f = FindDeep(c, target);
+                            if (f != null) return f;
+                        }
+                        return null;
+                    }
+
+                    bool copiedFromLiveNotebook = false;
+                    try
+                    {
+                        // Try to copy RoundedBorder sprite/type/color from the live Detective's Notebook window if present
+                        var allWindows = UnityEngine.Object.FindObjectsOfType<InfoWindow>();
+                        for (int i = 0; i < allWindows.Length; i++)
+                        {
+                            var w = allWindows[i];
+                            if (w != null && w.preset != null && string.Equals(w.preset.name, "DetectivesNotebook", StringComparison.Ordinal))
+                            {
+                                var rb = FindDeep(w.transform, "RoundedBorder");
+                                if (rb != null)
+                                {
+                                    var srcImg = rb.GetComponent<Image>();
+                                    if (srcImg != null && srcImg.sprite != null)
+                                    {
+                                        borderImg.sprite = srcImg.sprite;
+                                        borderImg.type = srcImg.type;
+                                        borderImg.pixelsPerUnitMultiplier = srcImg.pixelsPerUnitMultiplier;
+                                        borderImg.color = srcImg.color;
+                                        copiedFromLiveNotebook = true;
+                                        Plugin.Logger?.LogInfo("NotebookThemeHelper: Copied RoundedBorder from live Detective's Notebook");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Logger?.LogWarning($"NotebookThemeHelper: Failed to copy border from live notebook: {ex.Message}");
+                    }
+
+                    if (!copiedFromLiveNotebook)
+                    {
+                        // Fallback: create a custom rounded rectangle sprite (9-sliced)
+                        Texture2D roundedTexture = CreateRoundedRectTexture(128, 128, 30);
+                        borderImg.sprite = Sprite.Create(roundedTexture, new Rect(0, 0, roundedTexture.width, roundedTexture.height),
+                                                       new Vector2(0.5f, 0.5f), 100f, 1, SpriteMeshType.FullRect,
+                                                       new Vector4(30, 30, 30, 30));
+                        borderImg.type = Image.Type.Sliced;
+                        borderImg.color = new Color(0.45f, 0.4f, 0.35f, 1f);
+                        Plugin.Logger?.LogInfo("NotebookThemeHelper: Created custom rounded corner border (fallback)");
+                    }
                     
                     // Create a dark background inside the border
                     GameObject darkBg = new GameObject("DarkBackground");
@@ -496,9 +547,9 @@ namespace BackInBusiness
                     var darkBgRt = darkBg.AddComponent<RectTransform>();
                     darkBgRt.anchorMin = Vector2.zero;
                     darkBgRt.anchorMax = Vector2.one;
-                    // Extend the dark background to match the border but with a small margin
-                    darkBgRt.offsetMin = new Vector2(-4f, -4f);
-                    darkBgRt.offsetMax = new Vector2(4f, 12f); // Extra height at top with small margin
+                    // Inset the dark background to sit just inside the border
+                    darkBgRt.offsetMin = new Vector2(4f, 4f);
+                    darkBgRt.offsetMax = new Vector2(-4f, -4f);
                     
                     var darkBgImg = darkBg.AddComponent<Image>();
                     
@@ -899,6 +950,159 @@ namespace BackInBusiness
             {
                 Plugin.Logger?.LogError($"Error creating ContentsPage: {ex.Message}");
                 return null;
+            }
+        }
+        
+        /// <summary>
+        /// Creates a new GameObject with a TextMeshProUGUI component styled with the game's font
+        /// </summary>
+        /// <param name="parent">Parent transform</param>
+        /// <param name="name">Name for the GameObject</param>
+        /// <param name="text">Initial text content</param>
+        /// <param name="fontSize">Font size to use (default 24)</param>
+        /// <param name="fontWeight">Font weight to use (default Regular)</param>
+        /// <param name="fontStyle">Font style to use (default Normal)</param>
+        /// <returns>The created GameObject with TextMeshProUGUI component</returns>
+        public static GameObject CreateStyledText(Transform parent, string name, string text, float fontSize = 24f, FontWeight fontWeight = FontWeight.Regular, FontStyles fontStyle = FontStyles.Normal)
+        {
+            try
+            {
+                // Create GameObject with TextMeshProUGUI component
+                GameObject textObj = new GameObject(name);
+                var textComponent = textObj.AddComponent<TextMeshProUGUI>();
+                
+                // Set initial text
+                textComponent.text = text;
+                
+                // Apply game font styling
+                ApplyGameFontStyle(textComponent, fontSize, fontWeight, fontStyle);
+                
+                // Set up RectTransform
+                var rt = textComponent.rectTransform;
+                rt.anchorMin = new Vector2(0, 1); // Top-left anchoring
+                rt.anchorMax = new Vector2(0, 1);
+                rt.pivot = new Vector2(0, 1);
+                
+                // Set parent if provided
+                if (parent != null)
+                {
+                    textObj.transform.SetParent(parent, false);
+                }
+                
+                return textObj;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger?.LogError($"Error creating styled text: {ex.Message}");
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Applies the game's font style to a regular Unity UI Text component
+        /// </summary>
+        /// <param name="text">The Text component to style</param>
+        /// <param name="fontSize">Font size to use</param>
+        /// <param name="fontStyle">Font style to use</param>
+        public static void ApplyGameFontStyleToText(Text text, int fontSize = 24, FontStyle fontStyle = FontStyle.Normal)
+        {
+            if (text == null) return;
+            
+            try
+            {
+                // Try to find the game's font asset
+                Font gameFont = null;
+                var allFonts = Resources.FindObjectsOfTypeAll<Font>();
+                for (int i = 0; i < allFonts.Length; i++)
+                {
+                    if (allFonts[i] != null && allFonts[i].name != null && 
+                        (allFonts[i].name.Contains("TruetypewriterPolyglott") || 
+                         allFonts[i].name.Contains("Typewriter")))
+                    {
+                        gameFont = allFonts[i];
+                        break;
+                    }
+                }
+                
+                if (gameFont != null)
+                {
+                    text.font = gameFont;
+                    Plugin.Logger?.LogInfo($"NotebookThemeHelper: Applied game font '{gameFont.name}' to Text component");
+                }
+                else
+                {
+                    Plugin.Logger?.LogWarning("NotebookThemeHelper: Could not find game font asset for Text, using default font");
+                }
+                
+                // Apply font settings
+                text.fontSize = fontSize;
+                text.fontStyle = fontStyle;
+                
+                // Additional styling to match the game
+                text.alignment = TextAnchor.UpperLeft;
+                text.color = new Color(0.1f, 0.1f, 0.1f, 1f); // Dark text color
+                text.horizontalOverflow = HorizontalWrapMode.Overflow;
+                text.verticalOverflow = VerticalWrapMode.Overflow;
+                
+                Plugin.Logger?.LogInfo($"NotebookThemeHelper: Applied font styling to Text - Size: {fontSize}, Style: {fontStyle}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger?.LogError($"Error applying game font style to Text: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Applies the game's font style to a TextMeshProUGUI component
+        /// </summary>
+        /// <param name="text">The TextMeshProUGUI component to style</param>
+        /// <param name="fontSize">Font size to use (default 24)</param>
+        /// <param name="fontWeight">Font weight to use (default Regular)</param>
+        /// <param name="fontStyle">Font style to use (default Normal)</param>
+        public static void ApplyGameFontStyle(TextMeshProUGUI text, float fontSize = 24f, FontWeight fontWeight = FontWeight.Regular, FontStyles fontStyle = FontStyles.Normal)
+        {
+            if (text == null) return;
+            
+            try
+            {
+                // Try to find the game's font asset - IL2CPP compatible approach
+                TMP_FontAsset gameFont = null;
+                var allFonts = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();
+                for (int i = 0; i < allFonts.Length; i++)
+                {
+                    if (allFonts[i] != null && allFonts[i].name != null && allFonts[i].name.Contains("TruetypewriterPolyglott"))
+                    {
+                        gameFont = allFonts[i];
+                        break;
+                    }
+                }
+                
+                if (gameFont != null)
+                {
+                    text.font = gameFont;
+                    Plugin.Logger?.LogInfo($"NotebookThemeHelper: Applied game font '{gameFont.name}' to text component");
+                }
+                else
+                {
+                    Plugin.Logger?.LogWarning("NotebookThemeHelper: Could not find game font asset, using default font");
+                }
+                
+                // Apply font settings from the screenshot
+                text.fontSize = fontSize;
+                text.fontWeight = fontWeight;
+                text.fontStyle = fontStyle;
+                
+                // Additional styling to match the game
+                text.enableWordWrapping = true;
+                text.alignment = TextAlignmentOptions.Left;
+                text.color = new Color(0.1f, 0.1f, 0.1f, 1f); // Dark text color
+                text.overflowMode = TextOverflowModes.Truncate;
+                
+                Plugin.Logger?.LogInfo($"NotebookThemeHelper: Applied font styling - Size: {fontSize}, Weight: {fontWeight}, Style: {fontStyle}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger?.LogError($"Error applying game font style: {ex.Message}");
             }
         }
     }
