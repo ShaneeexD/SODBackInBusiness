@@ -1306,10 +1306,11 @@ namespace BackInBusiness
             // Buttons container - bottom bar
             GameObject btnRow = UIFactory.CreateHorizontalGroup(root, "Emp_Buttons", true, false, true, true, 12);
             var btnRt = btnRow.GetComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.20f, 0.06f);
+            // Align left edge with portrait border (~70px from left)
+            btnRt.anchorMin = new Vector2(0f, 0.06f);
             btnRt.anchorMax = new Vector2(0.98f, 0.16f);
-            btnRt.offsetMin = Vector2.zero;
-            btnRt.offsetMax = Vector2.zero;
+            btnRt.offsetMin = new Vector2(70f, 0f);
+            btnRt.offsetMax = new Vector2(0f, 0f);
             // Make the button bar container fully transparent (remove grey background), not the buttons themselves
             try { var bg = btnRow.GetComponent<Image>(); if (bg != null) { var c = bg.color; c.a = 0f; bg.color = c; bg.raycastTarget = false; } } catch { }
             // Parent under the card root so it clips and layers correctly with the themed background
