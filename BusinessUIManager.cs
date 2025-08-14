@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 using UniverseLib;
 using UniverseLib.UI;
 using UniverseLib.UI.Models;
@@ -175,6 +176,99 @@ namespace BackInBusiness
             catch (System.Exception ex)
             {
                 Plugin.Logger.LogError($"Error toggling business UI: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        // Show confirmation by cloning the in-game TooltipCanvas/PopupMessage. We'll wire buttons/text later.
+        public void ShowFireYesNo(string title, string message, string leftText, string rightText, System.Action onLeft, System.Action onRight)
+        {
+            try
+            {
+                Transform tooltip = null;
+                GameObject template = null;
+                try
+                {
+                    var tc = GameObject.Find("TooltipCanvas");
+                    tooltip = tc != null ? tc.transform : null;
+                    template = tooltip != null ? tooltip.Find("PopupMessage")?.gameObject : null;
+                }
+                catch { }
+
+                if (template == null || tooltip == null)
+                {
+                    Plugin.Logger.LogWarning("ShowFireYesNo: Could not find TooltipCanvas/PopupMessage. Falling back to UniverseLib panel.");
+                    try { if (this.uiBase == null) this.CreateBusinessUI(); } catch { }
+                    if (this.uiBase == null) return;
+                    try { FireYesNoPanel.PushInit(title, message, leftText, rightText, onLeft, onRight); } catch { }
+                    var fallback = new FireYesNoPanel(this.uiBase);
+                    fallback.SetActive(true);
+                    return;
+                }
+
+                // Clone template under TooltipCanvas
+                GameObject clone = null;
+                try { clone = UnityEngine.Object.Instantiate(template, tooltip, false); } catch { }
+                if (clone == null)
+                {
+                    Plugin.Logger.LogWarning("ShowFireYesNo: Instantiate failed for PopupMessage template.");
+                    return;
+                }
+
+                try { clone.name = "BIB_PopupMessage"; } catch { }
+                try { clone.transform.SetAsLastSibling(); } catch { }
+
+                // Center it
+                try
+                {
+                    var rt = clone.GetComponent<RectTransform>();
+                    if (rt != null)
+                    {
+                        rt.anchorMin = new Vector2(0.5f, 0.5f);
+                        rt.anchorMax = new Vector2(0.5f, 0.5f);
+                        rt.pivot = new Vector2(0.5f, 0.5f);
+                        rt.anchoredPosition = Vector2.zero;
+                        rt.localScale = Vector3.one;
+                    }
+                }
+                catch { }
+
+                // Ensure active/visible
+                try { clone.SetActive(true); } catch { }
+
+                // Remove/disable unused components in our cloned popup
+                try { var t = clone.transform; t.Find("Components/InputField")?.gameObject.SetActive(false); } catch { }
+                try { var t = clone.transform; t.Find("Components/ColourPicker")?.gameObject.SetActive(false); } catch { }
+                try { var t = clone.transform; t.Find("Components/Scroll View")?.gameObject.SetActive(false); } catch { }
+
+                try { clone.transform.Find("SecondaryButtonArea")?.gameObject.SetActive(false); } catch { }
+                try { clone.transform.Find("OptionButtonArea")?.gameObject.SetActive(false); } catch { }
+
+                // Set header title to "Confirm"
+                try
+                {
+                    var titleTf = clone.transform.Find("Header/PanelTitle");
+                    var titleTmp = titleTf != null ? titleTf.GetComponent<TMP_Text>() : null;
+                    if (titleTmp != null)
+                        titleTmp.text = "Confirm";
+                }
+                catch { }
+
+                // Set message text to the provided message (or a sensible default)
+                try
+                {
+                    var msgTf = clone.transform.Find("Components/MessageText");
+                    var msgTmp = msgTf != null ? msgTf.GetComponent<TMP_Text>() : null;
+                    if (msgTmp != null)
+                        msgTmp.text = string.IsNullOrEmpty(message) ? "Are you sure you want to fire this employee?" : message;
+                }
+                catch { }
+
+                // Note: We'll replace the template's button controllers with our own later per design.
+                Plugin.Logger.LogInfo("ShowFireYesNo: Cloned TooltipCanvas/PopupMessage and displayed it.");
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Logger.LogError($"ShowFireYesNo error: {ex.Message}\n{ex.StackTrace}");
             }
         }
     }
