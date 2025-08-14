@@ -1,4 +1,5 @@
 using System;
+using System.Collections; // Added for IEnumerator
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
@@ -583,6 +584,10 @@ namespace BackInBusiness
         private ButtonRef fireButton;
         private ButtonRef changeRoleButton;
         public event Action CloseRequested;
+        
+        // Current employee being displayed
+        private Citizen _currentEmployee;
+        public Citizen CurrentEmployee => _currentEmployee;
 
         // Resolve the RectTransform we want to move when dragging: ONLY accept FloatingEmployeePanel (PanelBase),
         // to ensure we don't move other UI elements like the business menu
@@ -1306,14 +1311,29 @@ namespace BackInBusiness
             // Buttons container - bottom bar
             GameObject btnRow = UIFactory.CreateHorizontalGroup(root, "Emp_Buttons", true, false, true, true, 12);
             var btnRt = btnRow.GetComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.20f, 0.06f);
+            // Align left edge with portrait border (~70px from left)
+            btnRt.anchorMin = new Vector2(0f, 0.06f);
             btnRt.anchorMax = new Vector2(0.98f, 0.16f);
-            btnRt.offsetMin = Vector2.zero;
-            btnRt.offsetMax = Vector2.zero;
+            btnRt.offsetMin = new Vector2(70f, 0f);
+            btnRt.offsetMax = new Vector2(0f, 0f);
             // Make the button bar container fully transparent (remove grey background), not the buttons themselves
             try { var bg = btnRow.GetComponent<Image>(); if (bg != null) { var c = bg.color; c.a = 0f; bg.color = c; bg.raycastTarget = false; } } catch { }
             // Parent under the card root so it clips and layers correctly with the themed background
             try { btnRow.transform.SetParent(cardRoot.transform, false); btnRow.transform.SetAsLastSibling(); } catch { }
+            // Ensure children don't stretch to fill the entire row
+            try
+            {
+                var rowLayout = btnRow.GetComponent<HorizontalLayoutGroup>();
+                if (rowLayout != null)
+                {
+                    rowLayout.childForceExpandWidth = false;
+                    rowLayout.childForceExpandHeight = false;
+                    rowLayout.childControlWidth = true;
+                    rowLayout.childControlHeight = true;
+                    rowLayout.spacing = 8f;
+                }
+            }
+            catch { }
 
             // Replace text buttons with ClearSearch-styled clones from Detective's Notebook
             try
@@ -1324,11 +1344,11 @@ namespace BackInBusiness
                 {
                     changeGo.name = "Emp_ChangeRoleBtn";
                     var changeRt = changeGo.GetComponent<RectTransform>();
-                    changeRt.sizeDelta = new Vector2(36f, 36f);
+                    changeRt.sizeDelta = new Vector2(120f, 40f);
                     try
                     {
                         var le = changeGo.GetComponent<LayoutElement>() ?? changeGo.AddComponent<LayoutElement>();
-                        le.minWidth = 36f; le.minHeight = 36f; le.preferredWidth = 36f; le.preferredHeight = 36f;
+                        le.minWidth = 100f; le.minHeight = 40f; le.preferredWidth = 120f; le.preferredHeight = 40f; le.flexibleWidth = 0f; le.flexibleHeight = 0f;
                     }
                     catch { }
 
@@ -1340,6 +1360,42 @@ namespace BackInBusiness
 
                     try
                     {
+                        // Keep background image enabled as the button visual
+                        var bgImg = changeGo.GetComponent<Image>();
+                        try
+                        {
+                            if (bgImg != null)
+                            {
+                                bgImg.enabled = true;
+                                // Inside fill color rgba(192,175,164,255)
+                                bgImg.color = new Color32(192, 175, 164, 255);
+                                // Add/adjust border via Outline effect using rgba(148,126,115,255)
+                                var outline = changeGo.GetComponent<Outline>();
+                                if (outline == null) outline = changeGo.AddComponent<Outline>();
+                                outline.effectColor = new Color32(148, 126, 115, 255);
+                                outline.effectDistance = new Vector2(1f, -1f);
+                                outline.useGraphicAlpha = true;
+                            }
+                        }
+                        catch { }
+
+                        // Add centered TMP label
+                        var label = CreateTMP(changeGo, "Label", "Change Role", TMPro.TextAlignmentOptions.Center);
+                        try
+                        {
+                            var lrt = label.GetComponent<RectTransform>();
+                            if (lrt != null)
+                            {
+                                lrt.anchorMin = new Vector2(0f, 0f);
+                                lrt.anchorMax = new Vector2(1f, 1f);
+                                lrt.offsetMin = new Vector2(8f, 6f);
+                                lrt.offsetMax = new Vector2(-8f, -6f);
+                            }
+                        }
+                        catch { }
+                        try { label.fontSize = 16f; label.color = Color.black; label.raycastTarget = false; } catch { }
+
+                        // Ensure controller targets the background image
                         var controller = changeGo.GetComponent<BIBButtonController>() ?? changeGo.AddComponent<BIBButtonController>();
                         controller.UseCloneHighlight = true;
                         controller.UseAdditionalHighlight = true;
@@ -1347,13 +1403,11 @@ namespace BackInBusiness
                         controller.AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
                         controller.useGenericAudioSounds = true;
                         controller.isCloseButton = false;
-                        if (controller.TargetImage == null)
-                        {
-                            var imgSelf = changeGo.GetComponent<Image>();
-                            if (imgSelf != null) controller.TargetImage = imgSelf;
-                            else { var imgChild = changeGo.GetComponentInChildren<Image>(true); if (imgChild != null) controller.TargetImage = imgChild; }
-                        }
+                        controller.TargetImage = bgImg;
                         if (controller.TargetTransform == null) controller.TargetTransform = changeGo.GetComponent<RectTransform>();
+
+                        // Remove any layout group if previously added
+                        try { var hl = changeGo.GetComponent<HorizontalLayoutGroup>(); if (hl != null) UnityEngine.Object.Destroy(hl); } catch { }
 
                         var et = changeGo.GetComponent<EventTrigger>() ?? changeGo.AddComponent<EventTrigger>();
                         if (et.triggers == null) et.triggers = new Il2CppSystem.Collections.Generic.List<EventTrigger.Entry>(); else et.triggers.Clear();
@@ -1376,22 +1430,58 @@ namespace BackInBusiness
                 {
                     fireGo.name = "Emp_FireBtn";
                     var fireRt = fireGo.GetComponent<RectTransform>();
-                    fireRt.sizeDelta = new Vector2(36f, 36f);
+                    fireRt.sizeDelta = new Vector2(90f, 40f);
                     try
                     {
                         var le = fireGo.GetComponent<LayoutElement>() ?? fireGo.AddComponent<LayoutElement>();
-                        le.minWidth = 36f; le.minHeight = 36f; le.preferredWidth = 36f; le.preferredHeight = 36f;
+                        le.minWidth = 80f; le.minHeight = 40f; le.preferredWidth = 90f; le.preferredHeight = 40f; le.flexibleWidth = 0f; le.flexibleHeight = 0f;
                     }
                     catch { }
 
                     var btn = fireGo.GetComponent<Button>() ?? fireGo.AddComponent<Button>();
                     try { btn.onClick.RemoveAllListeners(); } catch { }
-                    try { btn.onClick.AddListener(() => { try { OnFireClicked(); } catch { } }); } catch { }
+                    try { btn.onClick.AddListener(() => { try { OnFireClicked(); } catch (Exception ex) { Plugin.Logger.LogError($"Error in OnFireClicked: {ex}"); } }); } catch { }
                     try { var nav = btn.navigation; nav.mode = Navigation.Mode.None; btn.navigation = nav; } catch { }
                     try { btn.transition = Selectable.Transition.None; } catch { }
 
                     try
                     {
+                        // Keep background image enabled as the button visual
+                        var bgImg = fireGo.GetComponent<Image>();
+                        try
+                        {
+                            if (bgImg != null)
+                            {
+                                bgImg.enabled = true;
+                                // Inside fill color rgba(192,175,164,255)
+                                bgImg.color = new Color32(192, 175, 164, 255);
+                                // Add/adjust border via Outline effect using rgba(148,126,115,255)
+                                var outline = fireGo.GetComponent<Outline>();
+                                if (outline == null) outline = fireGo.AddComponent<Outline>();
+                                outline.effectColor = new Color32(148, 126, 115, 255);
+                                outline.effectDistance = new Vector2(1f, -1f);
+                                outline.useGraphicAlpha = true;
+                            }
+                        }
+                        catch { }
+
+                        // Add centered TMP label
+                        var label = CreateTMP(fireGo, "Label", "Fire", TMPro.TextAlignmentOptions.Center);
+                        try
+                        {
+                            var lrt = label.GetComponent<RectTransform>();
+                            if (lrt != null)
+                            {
+                                lrt.anchorMin = new Vector2(0f, 0f);
+                                lrt.anchorMax = new Vector2(1f, 1f);
+                                lrt.offsetMin = new Vector2(8f, 6f);
+                                lrt.offsetMax = new Vector2(-8f, -6f);
+                            }
+                        }
+                        catch { }
+                        try { label.fontSize = 16f; label.color = Color.black; label.raycastTarget = false; } catch { }
+
+                        // Ensure controller targets the background image
                         var controller = fireGo.GetComponent<BIBButtonController>() ?? fireGo.AddComponent<BIBButtonController>();
                         controller.UseCloneHighlight = true;
                         controller.UseAdditionalHighlight = true;
@@ -1399,13 +1489,11 @@ namespace BackInBusiness
                         controller.AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
                         controller.useGenericAudioSounds = true;
                         controller.isCloseButton = false;
-                        if (controller.TargetImage == null)
-                        {
-                            var imgSelf = fireGo.GetComponent<Image>();
-                            if (imgSelf != null) controller.TargetImage = imgSelf;
-                            else { var imgChild = fireGo.GetComponentInChildren<Image>(true); if (imgChild != null) controller.TargetImage = imgChild; }
-                        }
+                        controller.TargetImage = bgImg;
                         if (controller.TargetTransform == null) controller.TargetTransform = fireGo.GetComponent<RectTransform>();
+
+                        // Remove any layout group if previously added
+                        try { var hl = fireGo.GetComponent<HorizontalLayoutGroup>(); if (hl != null) UnityEngine.Object.Destroy(hl); } catch { }
 
                         var et = fireGo.GetComponent<EventTrigger>() ?? fireGo.AddComponent<EventTrigger>();
                         if (et.triggers == null) et.triggers = new Il2CppSystem.Collections.Generic.List<EventTrigger.Entry>(); else et.triggers.Clear();
@@ -1448,14 +1536,390 @@ namespace BackInBusiness
         // Click handlers used by cloned ClearSearch buttons
         private void OnChangeRoleClicked()
         {
-            try { Plugin.Logger.LogInfo("Change Role clicked (ClearSearch clone)"); } catch { }
-            // TODO: Implement role change flow
+            // TODO: Implement change role functionality
+            Plugin.Logger.LogInfo("Change role clicked");
         }
 
+        /// <summary>
+        /// Called when the Fire button is clicked. Shows a confirmation popup.
+        /// </summary>
         private void OnFireClicked()
         {
-            try { Plugin.Logger.LogInfo("Fire clicked (ClearSearch clone)"); } catch { }
-            // TODO: Implement fire flow
+            try
+            {
+                if (CurrentEmployee == null) return;
+                
+                // Create and show the fire confirmation popup
+                var popup = FireConfirmationPopup.Create(root.transform);
+                popup.Show(
+                    "Confirm Firing", 
+                    $"Are you sure you want to fire {CurrentEmployee.GetCitizenName()}?\n\nThis action cannot be undone.",
+                    "Cancel",
+                    "Fire",
+                    () => { /* Cancel action - just close */ },
+                    () => { 
+                        // Fire the employee
+                        try
+                        {
+                            Plugin.Logger.LogInfo($"Firing employee: {CurrentEmployee.GetCitizenName()}");
+                            // TODO: Implement actual firing logic here
+                            
+                            // Close the employee details window after firing
+                            CloseRequested?.Invoke();
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.Logger.LogError($"Error firing employee: {ex}");
+                        }
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger.LogError($"Error in OnFireClicked: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Custom popup for fire confirmation that mimics the game's PopupMessage but uses our own BIBButtonController.
+        /// </summary>
+        private class FireConfirmationPopup : MonoBehaviour
+        {
+            // UI Components
+            private GameObject popupRoot;
+            private RectTransform popupRect;
+            private Image backgroundImage;
+            private Image borderImage;
+            private TextMeshProUGUI titleText;
+            private TextMeshProUGUI messageText;
+            private GameObject leftButton;
+            private GameObject rightButton;
+            private CanvasGroup canvasGroup;
+            
+            // Callbacks
+            private Action onLeftButtonClick;
+            private Action onRightButtonClick;
+            
+            // Animation state
+            private float appearProgress = 0f;
+            private bool isActive = false;
+            private bool isDestroyed = false;
+            
+            /// <summary>
+            /// Creates a new fire confirmation popup attached to the specified parent.
+            /// </summary>
+            public static FireConfirmationPopup Create(Transform parent)
+            {
+                try
+                {
+                    // Create the popup root object
+                    var popupGo = UIFactory.CreateUIObject("FireConfirmationPopup", parent.gameObject);
+                    var popup = popupGo.AddComponent<FireConfirmationPopup>();
+                    popup.Initialize();
+                    return popup;
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Logger.LogError($"Error creating FireConfirmationPopup: {ex}");
+                    return null;
+                }
+            }
+            
+            /// <summary>
+            /// Initialize the popup UI components.
+            /// </summary>
+            private void Initialize()
+            {
+                try
+                {
+                    // Setup root with canvas group for fade
+                    popupRoot = gameObject;
+                    canvasGroup = popupRoot.AddComponent<CanvasGroup>();
+                    canvasGroup.alpha = 0f;
+                    canvasGroup.interactable = true;
+                    canvasGroup.blocksRaycasts = true;
+                    
+                    // Create semi-transparent background overlay (vignette)
+                    var overlayGo = UIFactory.CreateUIObject("Overlay", popupRoot);
+                    var overlayRect = overlayGo.GetComponent<RectTransform>();
+                    overlayRect.anchorMin = Vector2.zero;
+                    overlayRect.anchorMax = Vector2.one;
+                    overlayRect.offsetMin = Vector2.zero;
+                    overlayRect.offsetMax = Vector2.zero;
+                    var overlayImage = overlayGo.AddComponent<Image>();
+                    overlayImage.color = new Color(0f, 0f, 0f, 0.7f);
+                    overlayImage.raycastTarget = true;
+                    
+                    // Create popup panel
+                    var popupPanelGo = UIFactory.CreateUIObject("PopupPanel", popupRoot);
+                    popupRect = popupPanelGo.GetComponent<RectTransform>();
+                    popupRect.anchorMin = new Vector2(0.5f, 0.5f);
+                    popupRect.anchorMax = new Vector2(0.5f, 0.5f);
+                    popupRect.pivot = new Vector2(0.5f, 0.5f);
+                    popupRect.sizeDelta = new Vector2(500f, 300f);
+                    
+                    // Background and border
+                    backgroundImage = popupPanelGo.AddComponent<Image>();
+                    backgroundImage.color = new Color32(30, 30, 40, 255); // Dark background
+                    
+                    // Add border using an outline component
+                    var outline = popupPanelGo.AddComponent<Outline>();
+                    outline.effectColor = new Color32(148, 126, 115, 255); // Same as our button borders
+                    outline.effectDistance = new Vector2(2f, -2f);
+                    outline.useGraphicAlpha = true;
+                    
+                    // Create vertical layout for content
+                    var contentGo = UIFactory.CreateVerticalGroup(popupPanelGo, "Content", false, false, true, true, 10);
+                    var contentRect = contentGo.GetComponent<RectTransform>();
+                    contentRect.anchorMin = Vector2.zero;
+                    contentRect.anchorMax = Vector2.one;
+                    contentRect.offsetMin = new Vector2(20f, 20f);
+                    contentRect.offsetMax = new Vector2(-20f, -20f);
+                    
+                    // Title
+                    titleText = CreateTMP(contentGo.transform, "Title", "Confirm Action", TMPro.TextAlignmentOptions.Center);
+                    titleText.fontSize = 24f;
+                    titleText.color = new Color32(192, 175, 164, 255); // Same as button inside color
+                    var titleRect = titleText.GetComponent<RectTransform>();
+                    titleRect.sizeDelta = new Vector2(0f, 40f);
+                    
+                    // Message
+                    messageText = CreateTMP(contentGo.transform, "Message", "Are you sure?", TMPro.TextAlignmentOptions.Center);
+                    messageText.fontSize = 18f;
+                    messageText.color = Color.white;
+                    var messageRect = messageText.GetComponent<RectTransform>();
+                    messageRect.sizeDelta = new Vector2(0f, 120f);
+                    
+                    // Button container
+                    var buttonRowGo = UIFactory.CreateHorizontalGroup(contentGo, "ButtonRow", false, false, true, true, 20);
+                    var buttonRowRect = buttonRowGo.GetComponent<RectTransform>();
+                    buttonRowRect.sizeDelta = new Vector2(0f, 50f);
+                    
+                    // Left button (Cancel)
+                    leftButton = CreateButton(buttonRowGo.transform, "CancelButton", "Cancel", () => {
+                        if (onLeftButtonClick != null) onLeftButtonClick();
+                        Hide();
+                    });
+                    
+                    // Right button (Confirm)
+                    rightButton = CreateButton(buttonRowGo.transform, "ConfirmButton", "Confirm", () => {
+                        if (onRightButtonClick != null) onRightButtonClick();
+                        Hide();
+                    });
+                    
+                    // Initially hide
+                    popupRoot.SetActive(false);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Logger.LogError($"Error initializing FireConfirmationPopup: {ex}");
+                }
+            }
+            
+            /// <summary>
+            /// Creates a button with our BIBButtonController for consistent styling.
+            /// </summary>
+            private GameObject CreateButton(Transform parent, string name, string text, Action onClick)
+            {
+                try
+                {
+                    // Try to clone a ClearSearch button if possible
+                    GameObject buttonGo = UIThemeCache.InstantiateClearSearchButton(parent);
+                    if (buttonGo == null)
+                    {
+                        // Fallback to creating a basic button
+                        buttonGo = UIFactory.CreateUIObject(name, parent.gameObject);
+                        buttonGo.AddComponent<Image>();
+                    }
+                    
+                    buttonGo.name = name;
+                    
+                    // Set size
+                    var buttonRect = buttonGo.GetComponent<RectTransform>();
+                    buttonRect.sizeDelta = new Vector2(160f, 40f);
+                    
+                    // Add layout element to control size in layout groups
+                    var le = buttonGo.GetComponent<LayoutElement>() ?? buttonGo.AddComponent<LayoutElement>();
+                    le.minWidth = 160f;
+                    le.minHeight = 40f;
+                    le.preferredWidth = 160f;
+                    le.preferredHeight = 40f;
+                    le.flexibleWidth = 0f;
+                    le.flexibleHeight = 0f;
+                    
+                    // Configure button background
+                    var bgImg = buttonGo.GetComponent<Image>();
+                    if (bgImg != null)
+                    {
+                        bgImg.enabled = true;
+                        // Inside fill color rgba(192,175,164,255)
+                        bgImg.color = new Color32(192, 175, 164, 255);
+                        
+                        // Add border via Outline effect using rgba(148,126,115,255)
+                        var outline = buttonGo.GetComponent<Outline>();
+                        if (outline == null) outline = buttonGo.AddComponent<Outline>();
+                        outline.effectColor = new Color32(148, 126, 115, 255);
+                        outline.effectDistance = new Vector2(1f, -1f);
+                        outline.useGraphicAlpha = true;
+                    }
+                    
+                    // Add centered TMP label
+                    var label = CreateTMP(buttonGo, "Label", text, TMPro.TextAlignmentOptions.Center);
+                    var lrt = label.GetComponent<RectTransform>();
+                    if (lrt != null)
+                    {
+                        lrt.anchorMin = new Vector2(0f, 0f);
+                        lrt.anchorMax = new Vector2(1f, 1f);
+                        lrt.offsetMin = new Vector2(5f, 5f);
+                        lrt.offsetMax = new Vector2(-5f, -5f);
+                    }
+                    label.fontSize = 16f;
+                    label.color = Color.black;
+                    label.raycastTarget = false;
+                    
+                    // Add BIBButtonController for highlight effects
+                    var controller = buttonGo.GetComponent<BIBButtonController>() ?? buttonGo.AddComponent<BIBButtonController>();
+                    controller.UseCloneHighlight = true;
+                    controller.UseAdditionalHighlight = true;
+                    controller.AdditionalHighlightAtFront = true;
+                    controller.AdditionalHighlightColour = new Color(1f, 1f, 1f, 0.35f);
+                    controller.useGenericAudioSounds = true;
+                    controller.isCloseButton = false;
+                    controller.TargetImage = bgImg;
+                    if (controller.TargetTransform == null) controller.TargetTransform = buttonGo.GetComponent<RectTransform>();
+                    
+                    // Remove any layout group if previously added
+                    var hl = buttonGo.GetComponent<HorizontalLayoutGroup>();
+                    if (hl != null) UnityEngine.Object.Destroy(hl);
+                    
+                    // Add event triggers for hover/press effects
+                    var et = buttonGo.GetComponent<EventTrigger>() ?? buttonGo.AddComponent<EventTrigger>();
+                    if (et.triggers == null) et.triggers = new Il2CppSystem.Collections.Generic.List<EventTrigger.Entry>(); else et.triggers.Clear();
+                    
+                    // Helper to create event trigger entries
+                    EventTrigger.Entry mk(EventTriggerType t)
+                    {
+                        var e = new EventTrigger.Entry { eventID = t }; e.callback = new EventTrigger.TriggerEvent(); return e;
+                    }
+                    
+                    // Add event handlers
+                    try { var e = mk(EventTriggerType.PointerEnter); e.callback.AddListener((ev) => { try { controller.OnPointerEnter(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                    try { var e = mk(EventTriggerType.PointerExit);  e.callback.AddListener((ev) => { try { controller.OnPointerExit(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                    try { var e = mk(EventTriggerType.PointerDown);  e.callback.AddListener((ev) => { try { controller.OnPointerDown(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                    try { var e = mk(EventTriggerType.PointerUp);    e.callback.AddListener((ev) => { try { controller.OnPointerUp(ev as UnityEngine.EventSystems.PointerEventData); } catch { } }); et.triggers.Add(e); } catch { }
+                    try { var e = mk(EventTriggerType.PointerClick); e.callback.AddListener((ev) => { try { controller.OnPointerClick(ev as UnityEngine.EventSystems.PointerEventData); onClick?.Invoke(); } catch { } }); et.triggers.Add(e); } catch { }
+                    
+                    // Add Unity Button component for navigation
+                    var btn = buttonGo.GetComponent<Button>() ?? buttonGo.AddComponent<Button>();
+                    btn.onClick.RemoveAllListeners();
+                    btn.onClick.AddListener(() => { try { onClick?.Invoke(); } catch { } });
+                    var nav = btn.navigation; nav.mode = Navigation.Mode.None; btn.navigation = nav;
+                    btn.transition = Selectable.Transition.None;
+                    
+                    return buttonGo;
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Logger.LogError($"Error creating button: {ex}");
+                    return null;
+                }
+            }
+            
+            /// <summary>
+            /// Creates a TextMeshProUGUI component with the specified settings.
+            /// </summary>
+            private static TextMeshProUGUI CreateTMP(Transform parent, string name, string text, TMPro.TextAlignmentOptions alignment)
+            {
+                var go = UIFactory.CreateUIObject(name, parent.gameObject);
+                var tmp = go.AddComponent<TextMeshProUGUI>();
+                tmp.text = text;
+                tmp.alignment = alignment;
+                tmp.fontSize = 18f;
+                tmp.enableWordWrapping = true;
+                return tmp;
+            }
+            
+            /// <summary>
+            /// Creates a TextMeshProUGUI component on a GameObject.
+            /// </summary>
+            private static TextMeshProUGUI CreateTMP(GameObject parent, string name, string text, TMPro.TextAlignmentOptions alignment)
+            {
+                return CreateTMP(parent.transform, name, text, alignment);
+            }
+            
+            /// <summary>
+            /// Shows the popup with the specified title, message, and button texts.
+            /// </summary>
+            public void Show(string title, string message, string leftButtonText, string rightButtonText, Action onLeftClick, Action onRightClick)
+            {
+                try
+                {
+                    // Set texts
+                    titleText.text = title;
+                    messageText.text = message;
+                    
+                    // Update button texts
+                    var leftLabel = leftButton.transform.Find("Label")?.GetComponent<TextMeshProUGUI>();
+                    if (leftLabel != null) leftLabel.text = leftButtonText;
+                    
+                    var rightLabel = rightButton.transform.Find("Label")?.GetComponent<TextMeshProUGUI>();
+                    if (rightLabel != null) rightLabel.text = rightButtonText;
+                    
+                    // Set callbacks
+                    onLeftButtonClick = onLeftClick;
+                    onRightButtonClick = onRightClick;
+                    
+                    // Show the popup and begin appearing
+                    popupRoot.SetActive(true);
+                    isActive = true;
+                    appearProgress = 0f;
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Logger.LogError($"Error showing FireConfirmationPopup: {ex}");
+                }
+            }
+            
+            /// <summary>
+            /// Hides the popup with animation.
+            /// </summary>
+            public void Hide()
+            {
+                // Begin disappearing; Update() will handle the animation and destruction
+                isActive = false;
+            }
+            
+            // Drive the appear/disappear animation using Update to avoid IL2CPP coroutine issues
+            private void Update()
+            {
+                if (popupRoot == null || canvasGroup == null || popupRect == null)
+                    return;
+                
+                if ((isActive && appearProgress < 1f) || (!isActive && appearProgress > 0f))
+                {
+                    if (isActive)
+                    {
+                        appearProgress += 3.66f * Time.unscaledDeltaTime;
+                        if (appearProgress > 1f) appearProgress = 1f;
+                    }
+                    else
+                    {
+                        appearProgress -= 10f * Time.unscaledDeltaTime;
+                        if (appearProgress < 0f) appearProgress = 0f;
+                    }
+                    
+                    float eased = Mathf.SmoothStep(0f, 1f, appearProgress);
+                    canvasGroup.alpha = eased;
+                    popupRect.localScale = new Vector3(eased, eased, eased);
+                    
+                    if (!isActive && appearProgress <= 0f && !isDestroyed)
+                    {
+                        isDestroyed = true;
+                        Destroy(popupRoot);
+                    }
+                }
+            }
+            
         }
 
         public void Show(Citizen citizen, Occupation occ, int addressId = -1, int rosterIndex = -1)
@@ -1483,6 +1947,9 @@ namespace BackInBusiness
                 {
                     try { citizen = occ.employee as Citizen; } catch { }
                 }
+
+                // Track current employee for actions
+                _currentEmployee = citizen;
 
                 // Portrait: start with a placeholder tint; try to fetch immediately, then retry if needed
                 try { var old = portrait.gameObject.GetComponent(Il2CppType.Of<PortraitRetryLoader>()) as PortraitRetryLoader; if (old != null) UnityEngine.Object.Destroy(old); } catch { }
