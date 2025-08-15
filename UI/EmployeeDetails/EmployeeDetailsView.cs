@@ -1617,6 +1617,115 @@ namespace BackInBusiness
                                     
                                     // Generate new routine goals now that they're unemployed
                                     emp.GenerateRoutineGoals();
+                                    
+                                    // Add specific goals for homeless employees to make them move around
+                                    if (emp.isHomeless && RoutineControls.Instance.toGoGoal != null)
+                                    {
+                                        // Find some public places for the employee to visit
+                                        // Create a list of potential public locations
+                                        List<NewGameLocation> publicLocations = new List<NewGameLocation>();
+                                        
+                                        // First try to find streets
+                                        foreach (NewGameLocation location in CityData.Instance.gameLocationDirectory)
+                                        {
+                                            if (location != null && location.building != null && 
+                                                location.building.preset != null)
+                                            {
+                                                // Add streets to our list of potential locations
+                                                if (location.building.preset.presetName == "Street")
+                                                {
+                                                    publicLocations.Add(location);
+                                                    Plugin.Logger.LogInfo($"Found street location: {location.name}");
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Pick a random street if we found any
+                                        NewGameLocation streetLocation = null;
+                                        if (publicLocations.Count > 0)
+                                        {
+                                            int randomIndex = UnityEngine.Random.Range(0, publicLocations.Count);
+                                            streetLocation = publicLocations[randomIndex];
+                                        }
+                                        
+                                        // If we found a street, create a goal to go there
+                                        if (streetLocation != null)
+                                        {
+                                            Plugin.Logger.LogInfo($"Creating toGoGoal for {emp.GetCitizenName()} to street: {streetLocation.name}");
+                                            NewNode safeNode = emp.FindSafeTeleport(streetLocation, false, true);
+                                            if (safeNode != null)
+                                            {
+                                                // Higher priority (0.8) for streets to make them more likely to go there first
+                                                emp.ai.CreateNewGoal(RoutineControls.Instance.toGoGoal, 0.8f, 0f, safeNode, null, streetLocation, null, null, -2);
+                                                Plugin.Logger.LogInfo($"Successfully added street goal for {emp.GetCitizenName()} at node {safeNode.name}");
+                                            }
+                                            else
+                                            {
+                                                Plugin.Logger.LogWarning($"Could not find safe node in {streetLocation.name} for {emp.GetCitizenName()}");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            Plugin.Logger.LogWarning($"No street locations found for {emp.GetCitizenName()} to visit");
+                                        }
+                                        
+                                        // Also try to find public buildings like City Hall, Park, etc.
+                                        List<NewGameLocation> publicBuildings = new List<NewGameLocation>();
+                                        foreach (NewGameLocation location in CityData.Instance.gameLocationDirectory)
+                                        {
+                                            if (location != null && location.building != null && 
+                                                location.building.preset != null)
+                                            {
+                                                string presetName = location.building.preset.presetName;
+                                                // Add various public buildings to our list
+                                                if (presetName == "CityHall" || 
+                                                    presetName == "Park" ||
+                                                    presetName == "Hotel" ||
+                                                    presetName == "AmericanDiner" ||
+                                                    presetName == "ShantyTown" ||
+                                                    presetName == "Townhouse" ||
+                                                    presetName == "OneFIfthAve" ||
+                                                    presetName == "BrandyNetherland")
+                                                {
+                                                    publicBuildings.Add(location);
+                                                    Plugin.Logger.LogInfo($"Found public building: {location.name} (Type: {presetName})");
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Pick a random public building if we found any
+                                        NewGameLocation publicBuilding = null;
+                                        if (publicBuildings.Count > 0)
+                                        {
+                                            int randomIndex = UnityEngine.Random.Range(0, publicBuildings.Count);
+                                            publicBuilding = publicBuildings[randomIndex];
+                                        }
+                                        
+                                        // If we found a public building, create a goal to go there
+                                        if (publicBuilding != null)
+                                        {
+                                            string buildingType = publicBuilding.building?.preset?.presetName ?? "unknown";
+                                            Plugin.Logger.LogInfo($"Creating toGoGoal for {emp.GetCitizenName()} to {buildingType}: {publicBuilding.name}");
+                                            NewNode safeNode = emp.FindSafeTeleport(publicBuilding, false, true);
+                                            if (safeNode != null)
+                                            {
+                                                // Slightly lower priority (0.7) for public buildings
+                                                emp.ai.CreateNewGoal(RoutineControls.Instance.toGoGoal, 0.7f, 0f, safeNode, null, publicBuilding, null, null, -2);
+                                                Plugin.Logger.LogInfo($"Successfully added public building goal for {emp.GetCitizenName()} at node {safeNode.name}");
+                                            }
+                                            else
+                                            {
+                                                Plugin.Logger.LogWarning($"Could not find safe node in {publicBuilding.name} for {emp.GetCitizenName()}");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            Plugin.Logger.LogWarning($"No public buildings found for {emp.GetCitizenName()} to visit");
+                                        }
+                                        
+                                        // Force AI to update priorities again after adding these goals
+                                        emp.ai.AITick(true, false);
+                                    }
                                 }
                                 
                                 Plugin.Logger.LogInfo($"Employee '{emp.GetCitizenName()}' set to Unemployed and Homeless.");
