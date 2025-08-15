@@ -1561,13 +1561,38 @@ namespace BackInBusiness
                         try
                         {
                             Plugin.Logger.LogInfo($"Firing employee: {CurrentEmployee.GetCitizenName()}");
-                            // Set employee to Unemployed using game's API
+                            // Set employee to Unemployed and Homeless using game's API
                             var emp = CurrentEmployee;
                             if (emp != null)
                             {
+                                // Make unemployed
                                 var unemployed = CitizenCreator.Instance.CreateUnemployed();
                                 emp.SetJob(unemployed);
-                                Plugin.Logger.LogInfo($"Employee '{emp.GetCitizenName()}' set to Unemployed.");
+                                
+                                // Make homeless
+                                if (emp.home != null)
+                                {
+                                    var oldHome = emp.home;
+                                    emp.SetResidence(null, true);
+                                    emp.isHomeless = true;
+                                    
+                                    // Add to homeless directory if not already there
+                                    if (!CityData.Instance.homelessDirectory.Contains(emp))
+                                    {
+                                        CityData.Instance.homelessDirectory.Add(emp);
+                                        
+                                        // Remove from homed directory if present
+                                        if (CityData.Instance.homedDirectory.Contains(emp))
+                                        {
+                                            CityData.Instance.homedDirectory.Remove(emp);
+                                        }
+                                    }
+                                    
+                                    string address = oldHome?.thisAsAddress?.name?.ToString() ?? "unknown address";
+                                    Plugin.Logger.LogInfo($"Employee '{emp.GetCitizenName()}' evicted from {address}.");
+                                }
+                                
+                                Plugin.Logger.LogInfo($"Employee '{emp.GetCitizenName()}' set to Unemployed and Homeless.");
                             }
                             else
                             {
