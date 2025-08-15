@@ -179,7 +179,8 @@ namespace BackInBusiness
             }
         }
 
-        // Show confirmation by cloning the in-game TooltipCanvas/PopupMessage. We'll wire buttons/text later.
+        // Show confirmation by cloning the in-game TooltipCanvas/PopupMessage.
+        // Keep the popup's default visuals; only replace button functionality and safety.
         public void ShowFireYesNo(string title, string message, string leftText, string rightText, System.Action onLeft, System.Action onRight)
         {
             try
@@ -235,7 +236,7 @@ namespace BackInBusiness
                 // Ensure active/visible
                 try { clone.SetActive(true); } catch { }
 
-                // Remove/disable unused components in our cloned popup
+                // Disable unrelated components; explicitly disable Scroll View (we use MessageText field instead)
                 try { var t = clone.transform; t.Find("Components/InputField")?.gameObject.SetActive(false); } catch { }
                 try { var t = clone.transform; t.Find("Components/ColourPicker")?.gameObject.SetActive(false); } catch { }
                 try { var t = clone.transform; t.Find("Components/Scroll View")?.gameObject.SetActive(false); } catch { }
@@ -243,70 +244,136 @@ namespace BackInBusiness
                 try { clone.transform.Find("SecondaryButtonArea")?.gameObject.SetActive(false); } catch { }
                 try { clone.transform.Find("OptionButtonArea")?.gameObject.SetActive(false); } catch { }
 
-                // Set header title to "Confirm"
+                // Set header title to requested title (keep default style)
                 try
                 {
                     var titleTf = clone.transform.Find("Header/PanelTitle");
-                    var titleTmp = titleTf != null ? titleTf.GetComponent<TMP_Text>() : null;
-                    if (titleTmp != null)
-                        titleTmp.text = "Confirm";
-                }
-                catch { }
-
-                // Set message text to the provided message (or a sensible default)
-                try
-                {
-                    var msgTf = clone.transform.Find("Components/MessageText");
-                    var msgTmp = msgTf != null ? msgTf.GetComponent<TMP_Text>() : null;
-                    if (msgTmp != null)
-                        msgTmp.text = string.IsNullOrEmpty(message) ? "Are you sure you want to fire this employee?" : message;
-                }
-                catch { }
-
-                // Replace template button controllers with our own and set labels
-                try
-                {
-                    // Left button -> "No"
-                    var leftBtnTf = clone.transform.Find("ButtonArea/Left Button");
-                    if (leftBtnTf != null)
+                    if (titleTf != null)
                     {
-                        // Disable game's ButtonController if present
-                        try { var bc = leftBtnTf.gameObject.GetComponent("ButtonController"); if (bc != null) { var beh = bc as Behaviour; if (beh != null) beh.enabled = false; else UnityEngine.Object.Destroy(bc); } } catch { }
-                        // Add our controller if missing
-                        if (leftBtnTf.gameObject.GetComponent<BIBButtonController>() == null)
-                            leftBtnTf.gameObject.AddComponent<BIBButtonController>();
-                        // Set label text
-                        try
+                        var titleTmp = titleTf.GetComponent<TMP_Text>();
+                        if (titleTmp != null) titleTmp.text = string.IsNullOrEmpty(title) ? "Confirm" : title;
+                        else
                         {
-                            var leftTextTf = leftBtnTf.Find("Text");
-                            var leftTmp = leftTextTf != null ? leftTextTf.GetComponent<TMP_Text>() : null;
-                            if (leftTmp != null) leftTmp.text = "No"; // Always use No on left per design
+                            var uiTxt = titleTf.GetComponent<Text>();
+                            if (uiTxt != null) uiTxt.text = string.IsNullOrEmpty(title) ? "Confirm" : title;
                         }
-                        catch { }
-                    }
-
-                    // Right button -> "Yes"
-                    var rightBtnTf = clone.transform.Find("ButtonArea/Right Button");
-                    if (rightBtnTf != null)
-                    {
-                        // Disable game's ButtonController if present
-                        try { var bc = rightBtnTf.gameObject.GetComponent("ButtonController"); if (bc != null) { var beh = bc as Behaviour; if (beh != null) beh.enabled = false; else UnityEngine.Object.Destroy(bc); } } catch { }
-                        // Add our controller if missing
-                        if (rightBtnTf.gameObject.GetComponent<BIBButtonController>() == null)
-                            rightBtnTf.gameObject.AddComponent<BIBButtonController>();
-                        // Set label text
-                        try
-                        {
-                            var rightTextTf = rightBtnTf.Find("Text");
-                            var rightTmp = rightTextTf != null ? rightTextTf.GetComponent<TMP_Text>() : null;
-                            if (rightTmp != null) rightTmp.text = "Yes"; // Always use Yes on right per design
-                        }
-                        catch { }
                     }
                 }
                 catch { }
 
-                Plugin.Logger.LogInfo("ShowFireYesNo: Cloned TooltipCanvas/PopupMessage, customized buttons, and displayed it.");
+                // Set body/message text explicitly on Components/MessageText (TMP), with light fallbacks
+                try
+                {
+                    if (!string.IsNullOrEmpty(message))
+                    {
+                        Transform bodyTf = null;
+                        // Prefer the dedicated MessageText
+                        bodyTf = clone.transform.Find("Components/MessageText");
+                        // Light fallbacks if needed
+                        if (bodyTf == null) bodyTf = clone.transform.Find("Components/Message");
+                        if (bodyTf == null) bodyTf = clone.transform.Find("Components/Text");
+                        if (bodyTf == null) bodyTf = clone.transform.Find("Body/Text");
+
+                        if (bodyTf != null)
+                        {
+                            var bodyTmp = bodyTf.GetComponent<TMP_Text>();
+                            if (bodyTmp != null) bodyTmp.text = message;
+                            else
+                            {
+                                var bodyTxt = bodyTf.GetComponent<Text>();
+                                if (bodyTxt != null) bodyTxt.text = message;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // Find the original buttons
+                var leftOrig = clone.transform.Find("ButtonArea/Left Button");
+                var rightOrig = clone.transform.Find("ButtonArea/Right Button");
+
+                // Guard if buttons not found
+                if (leftOrig == null || rightOrig == null)
+                {
+                    Plugin.Logger.LogWarning("ShowFireYesNo: Popup button(s) not found; will leave popup as-is.");
+                    return;
+                }
+
+                // Parent for buttons
+                var btnParent = leftOrig.parent;
+                int leftIndex = leftOrig.GetSiblingIndex();
+                int rightIndex = rightOrig.GetSiblingIndex();
+
+                // Clone the buttons to get a clean instance we control, keeping default visuals
+                GameObject leftBtn = null, rightBtn = null;
+                try { leftBtn = UnityEngine.Object.Instantiate(leftOrig.gameObject, btnParent, false); } catch { }
+                try { rightBtn = UnityEngine.Object.Instantiate(rightOrig.gameObject, btnParent, false); } catch { }
+                if (leftBtn != null) { try { leftBtn.name = "BIB_LeftButton"; } catch { } try { leftBtn.transform.SetSiblingIndex(leftIndex); } catch { } }
+                if (rightBtn != null) { try { rightBtn.name = "BIB_RightButton"; } catch { } try { rightBtn.transform.SetSiblingIndex(rightIndex); } catch { } }
+
+                // Remove the originals (after cloning)
+                try { UnityEngine.Object.Destroy(leftOrig.gameObject); } catch { }
+                try { UnityEngine.Object.Destroy(rightOrig.gameObject); } catch { }
+
+                // Local helper to wire a button while preserving default visuals/behaviors
+                System.Action<GameObject, bool> setupBtn = (go, isRight) =>
+                {
+                    if (go == null) return;
+                    try
+                    {
+                        // Ensure Image accepts raycasts
+                        try { var img = go.GetComponent<Image>(); if (img != null) img.raycastTarget = true; } catch { }
+
+                        // Ensure a Unity Button exists
+                        var btn = go.GetComponent<Button>();
+                        if (btn == null) btn = go.AddComponent<Button>();
+
+                        // Set fixed labels (keep current component type)
+                        try
+                        {
+                            var textTf = go.transform.Find("Text");
+                            if (textTf != null)
+                            {
+                                var tmp = textTf.GetComponent<TMP_Text>();
+                                if (tmp != null) tmp.text = isRight ? "Yes" : "No";
+                                else
+                                {
+                                    var uiTxt = textTf.GetComponent<Text>();
+                                    if (uiTxt != null) uiTxt.text = isRight ? "Yes" : "No";
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // Clear any copied listeners from template to avoid duplicate/default actions
+                        try { btn.onClick.RemoveAllListeners(); } catch { }
+
+                        // Wire our callbacks; keep visuals untouched
+                        // Safe invoke and close popup
+                        btn.onClick.AddListener(() =>
+                        {
+                            try
+                            {
+                                if (isRight) { try { onRight?.Invoke(); } catch (System.Exception ex) { try { Plugin.Logger.LogWarning($"ShowFireYesNo: onRight error: {ex.Message}"); } catch { } } }
+                                else { try { onLeft?.Invoke(); } catch (System.Exception ex) { try { Plugin.Logger.LogWarning($"ShowFireYesNo: onLeft error: {ex.Message}"); } catch { } } }
+                            }
+                            finally
+                            {
+                                try { UnityEngine.Object.Destroy(clone); } catch { }
+                            }
+                        });
+                    }
+                    catch { }
+                };
+
+                // Apply setup to both buttons
+                setupBtn(leftBtn, false);
+                setupBtn(rightBtn, true);
+
+                // Bring the popup to the front within its canvas hierarchy
+                try { clone.transform.SetAsLastSibling(); Canvas.ForceUpdateCanvases(); } catch { }
+
+                Plugin.Logger.LogInfo("ShowFireYesNo: Cloned PopupMessage, replaced buttons with safe wired copies, and displayed it (default visuals kept).");
             }
             catch (System.Exception ex)
             {
