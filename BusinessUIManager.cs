@@ -310,7 +310,7 @@ namespace BackInBusiness
                 // Before showing the popup, hide underlying Business UI content
                 try { if (businessPanel != null) businessPanel.BeginModalSuppression(); } catch { }
                 try { clone.SetActive(true); } catch { }
-
+                ToggleBusinessUI();
                 // Ensure the popup renders above Business UI by forcing its own Canvas with high sorting order
                 try
                 {

@@ -1556,7 +1556,7 @@ namespace BackInBusiness
                     $"Are you sure you want to fire {CurrentEmployee.GetCitizenName()}?\n\nThis action cannot be undone.",
                     "Cancel",
                     "Fire",
-                    onLeft: () => { /* cancel */ },
+                    onLeft: () => { BusinessUIManager.Instance.ToggleBusinessUI(); },
                     onRight: () =>
                     {
                         try
@@ -1570,6 +1570,7 @@ namespace BackInBusiness
                                 try
                                 {
                                     AIGoalManager.MakeUnemployedAndHomeless(emp);
+                                    BusinessUIManager.Instance.ToggleBusinessUI();
                                 }
                                 catch (Exception ex)
                                 {
