@@ -1,5 +1,6 @@
 using System;
 using System.Collections; // Added for IEnumerator
+using System.Collections.Generic; // Added for List<T>
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
@@ -1568,28 +1569,54 @@ namespace BackInBusiness
                                 // Make unemployed
                                 var unemployed = CitizenCreator.Instance.CreateUnemployed();
                                 emp.SetJob(unemployed);
-                                
+
                                 // Make homeless
                                 if (emp.home != null)
                                 {
                                     var oldHome = emp.home;
                                     emp.SetResidence(null, true);
                                     emp.isHomeless = true;
-                                    
+
                                     // Add to homeless directory if not already there
                                     if (!CityData.Instance.homelessDirectory.Contains(emp))
                                     {
                                         CityData.Instance.homelessDirectory.Add(emp);
-                                        
+
                                         // Remove from homed directory if present
                                         if (CityData.Instance.homedDirectory.Contains(emp))
                                         {
                                             CityData.Instance.homedDirectory.Remove(emp);
                                         }
                                     }
-                                    
+
                                     string address = oldHome?.thisAsAddress?.name?.ToString() ?? "unknown address";
                                     Plugin.Logger.LogInfo($"Employee '{emp.GetCitizenName()}' evicted from {address}.");
+                                    
+                                    // Reset AI state
+                                    emp.isAtWork = false;
+                                    
+                                    // Clear ALL existing goals
+                                    if (emp.ai != null && emp.ai.goals != null)
+                                    {
+                                        // Create a copy of the goals list to avoid modification during enumeration
+                                        List<NewAIGoal> goalsToRemove = new List<NewAIGoal>();
+                                        foreach (NewAIGoal goal in emp.ai.goals)
+                                        {
+                                            goalsToRemove.Add(goal);
+                                        }
+                                        
+                                        // Remove all goals
+                                        foreach (NewAIGoal goal in goalsToRemove)
+                                        {
+                                            goal.Remove();
+                                        }
+                                        
+                                        // Force update priorities to make AI reconsider goals
+                                        emp.ai.AITick(true, false);
+                                    }
+                                    
+                                    // Generate new routine goals now that they're unemployed
+                                    emp.GenerateRoutineGoals();
                                 }
                                 
                                 Plugin.Logger.LogInfo($"Employee '{emp.GetCitizenName()}' set to Unemployed and Homeless.");
