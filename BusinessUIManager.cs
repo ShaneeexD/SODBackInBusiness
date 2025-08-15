@@ -35,6 +35,8 @@ namespace BackInBusiness
         // UI components
         private UIBase uiBase;
         private BusinessPanel businessPanel;
+        // Separate UI root for modal fallback panels (so we can disable main PanelHolder safely)
+        private UIBase modalUiBase;
         
         // Static reference to track if UI has been created
         private static bool uiInitialized = false;
@@ -185,6 +187,37 @@ namespace BackInBusiness
         {
             try
             {
+                // Always try to target and hide the exact requested panel holder while the modal is visible
+                GameObject panelHolderToHide = null;
+                bool panelHolderPrevActive = false;
+                try
+                {
+                    // First try absolute path as requested
+                    panelHolderToHide = GameObject.Find("UniverseLibCanvas/com.backinbusiness.ui_Root/PanelHolder/PanelHolder");
+                    if (panelHolderToHide == null)
+                    {
+                        // Fallback: resolve via our main panel's UI root
+                        Transform h = null;
+                        try { h = businessPanel != null && businessPanel.Owner != null && businessPanel.Owner.RootObject != null ? businessPanel.Owner.RootObject.transform : null; } catch { h = null; }
+                        if (h != null)
+                        {
+                            try { h = h.Find("PanelHolder/PanelHolder"); } catch { h = null; }
+                            if (h != null) panelHolderToHide = h.gameObject;
+                        }
+                    }
+                    if (panelHolderToHide != null)
+                    {
+                        panelHolderPrevActive = panelHolderToHide.activeSelf;
+                        panelHolderToHide.SetActive(false);
+                        try { Plugin.Logger.LogInfo($"ShowFireYesNo: Deactivated PanelHolder: {panelHolderToHide.name}"); } catch { }
+                    }
+                    else
+                    {
+                        try { Plugin.Logger.LogWarning("ShowFireYesNo: Could not resolve main PanelHolder to hide."); } catch { }
+                    }
+                }
+                catch { }
+
                 Transform tooltip = null;
                 GameObject template = null;
                 try
@@ -198,10 +231,50 @@ namespace BackInBusiness
                 if (template == null || tooltip == null)
                 {
                     Plugin.Logger.LogWarning("ShowFireYesNo: Could not find TooltipCanvas/PopupMessage. Falling back to UniverseLib panel.");
-                    try { if (this.uiBase == null) this.CreateBusinessUI(); } catch { }
-                    if (this.uiBase == null) return;
-                    try { FireYesNoPanel.PushInit(title, message, leftText, rightText, onLeft, onRight); } catch { }
-                    var fallback = new FireYesNoPanel(this.uiBase);
+                    // Ensure a dedicated modal UI root exists (separate from main UI root)
+                    try
+                    {
+                        if (this.modalUiBase == null)
+                        {
+                            try { this.modalUiBase = UniversalUI.RegisterUI("com.backinbusiness.ui.modal", null); }
+                            catch (System.Exception modalEx)
+                            {
+                                Plugin.Logger.LogInfo($"Modal UI already registered: {modalEx.Message}");
+                                string uniqueId = $"com.backinbusiness.ui.modal.{System.DateTime.Now.Ticks}";
+                                this.modalUiBase = UniversalUI.RegisterUI(uniqueId, null);
+                            }
+                        }
+                    }
+                    catch { }
+                    if (this.modalUiBase == null)
+                    {
+                        // Restore panel holder if we fail to present a modal
+                        try { if (panelHolderToHide != null) panelHolderToHide.SetActive(panelHolderPrevActive); } catch { }
+                        return;
+                    }
+                    // Hide underlying Business UI content while the modal is up
+                    try { if (businessPanel != null) businessPanel.BeginModalSuppression(); } catch { }
+                    // Wrap provided callbacks to restore UI after dismissal
+                    System.Action wrappedLeft = () =>
+                    {
+                        try { onLeft?.Invoke(); }
+                        finally
+                        {
+                            try { if (businessPanel != null) businessPanel.EndModalSuppression(); } catch { }
+                            try { if (panelHolderToHide != null) panelHolderToHide.SetActive(panelHolderPrevActive); } catch { }
+                        }
+                    };
+                    System.Action wrappedRight = () =>
+                    {
+                        try { onRight?.Invoke(); }
+                        finally
+                        {
+                            try { if (businessPanel != null) businessPanel.EndModalSuppression(); } catch { }
+                            try { if (panelHolderToHide != null) panelHolderToHide.SetActive(panelHolderPrevActive); } catch { }
+                        }
+                    };
+                    try { FireYesNoPanel.PushInit(title, message, leftText, rightText, wrappedLeft, wrappedRight); } catch { }
+                    var fallback = new FireYesNoPanel(this.modalUiBase);
                     fallback.SetActive(true);
                     return;
                 }
@@ -234,7 +307,40 @@ namespace BackInBusiness
                 catch { }
 
                 // Ensure active/visible
+                // Before showing the popup, hide underlying Business UI content
+                try { if (businessPanel != null) businessPanel.BeginModalSuppression(); } catch { }
                 try { clone.SetActive(true); } catch { }
+
+                // Ensure the popup renders above Business UI by forcing its own Canvas with high sorting order
+                try
+                {
+                    var canvas = clone.GetComponent<Canvas>();
+                    if (canvas == null) canvas = clone.AddComponent<Canvas>();
+                    canvas.overrideSorting = true;
+                    // Compute a safe order above any canvases currently active
+                    int maxOrder = 0;
+                    try
+                    {
+                        var canvases = UnityEngine.Object.FindObjectsOfType<Canvas>();
+                        if (canvases != null)
+                        {
+                            for (int i = 0; i < canvases.Length; i++)
+                            {
+                                if (canvases[i] != null && canvases[i].sortingOrder > maxOrder)
+                                    maxOrder = canvases[i].sortingOrder;
+                            }
+                        }
+                    }
+                    catch { }
+                    // Use a generous default if nothing found
+                    if (maxOrder <= 0) maxOrder = 6000;
+                    canvas.sortingOrder = maxOrder + 20;
+
+                    // Ensure raycaster for input
+                    var ray = clone.GetComponent<UnityEngine.UI.GraphicRaycaster>();
+                    if (ray == null) clone.AddComponent<UnityEngine.UI.GraphicRaycaster>();
+                }
+                catch { }
 
                 // Disable unrelated components; explicitly disable Scroll View (we use MessageText field instead)
                 try { var t = clone.transform; t.Find("Components/InputField")?.gameObject.SetActive(false); } catch { }
@@ -359,6 +465,9 @@ namespace BackInBusiness
                             }
                             finally
                             {
+                                // Restore underlying Business UI content
+                                try { if (businessPanel != null) businessPanel.EndModalSuppression(); } catch { }
+                                try { if (panelHolderToHide != null) panelHolderToHide.SetActive(panelHolderPrevActive); } catch { }
                                 try { UnityEngine.Object.Destroy(clone); } catch { }
                             }
                         });
@@ -429,6 +538,12 @@ namespace BackInBusiness
         private readonly System.Collections.Generic.Dictionary<GameObject, EmployeeDetailsView> employeeWindowViews = new System.Collections.Generic.Dictionary<GameObject, EmployeeDetailsView>();
         private GameObject employeeWindowsOverlay; // overlay parent for floating windows (ignored by layout)
         private readonly System.Collections.Generic.List<FloatingEmployeePanel> openEmployeePanels = new System.Collections.Generic.List<FloatingEmployeePanel>();
+        // Modal suppression state
+        private bool modalSuppressed = false;
+        private bool prevMainMenuActive, prevPurchaseActive, prevOwnedActive, prevDetailsActive, prevEmpDetailsActive, prevOverlayActive;
+        private readonly System.Collections.Generic.List<GameObject> prevActiveEmployeeWindows = new System.Collections.Generic.List<GameObject>();
+        private GameObject universeLibPanelHolder; // UniverseLibCanvas/com.backinbusiness.ui_Root/PanelHolder/PanelHolder
+        private bool prevUniverseLibPanelHolderActive;
         
         // Required abstract properties
         public override string Name => "Business Management";
@@ -438,6 +553,101 @@ namespace BackInBusiness
         public override UnityEngine.Vector2 DefaultAnchorMax => new UnityEngine.Vector2(0.75f, 0.75f);
         
         public BusinessPanel(UIBase owner) : base(owner) { }
+
+        // Hide all panel content while a modal popup is active, preserving current visibility state
+        public void BeginModalSuppression()
+        {
+            if (modalSuppressed) return;
+            try
+            {
+                prevMainMenuActive = mainMenuContainer != null && mainMenuContainer.activeSelf;
+                prevPurchaseActive = purchaseBusinessContainer != null && purchaseBusinessContainer.activeSelf;
+                prevOwnedActive = ownedBusinessesContainer != null && ownedBusinessesContainer.activeSelf;
+                prevDetailsActive = businessDetailsContainer != null && businessDetailsContainer.activeSelf;
+                prevEmpDetailsActive = employeeDetailsContainer != null && employeeDetailsContainer.activeSelf;
+                prevOverlayActive = employeeWindowsOverlay != null && employeeWindowsOverlay.activeSelf;
+
+                prevActiveEmployeeWindows.Clear();
+                for (int i = 0; i < openEmployeeWindowContainers.Count; i++)
+                {
+                    var go = openEmployeeWindowContainers[i];
+                    if (go != null && go.activeSelf)
+                        prevActiveEmployeeWindows.Add(go);
+                }
+
+                if (mainMenuContainer != null) mainMenuContainer.SetActive(false);
+                if (purchaseBusinessContainer != null) purchaseBusinessContainer.SetActive(false);
+                if (ownedBusinessesContainer != null) ownedBusinessesContainer.SetActive(false);
+                if (businessDetailsContainer != null) businessDetailsContainer.SetActive(false);
+                if (employeeDetailsContainer != null) employeeDetailsContainer.SetActive(false);
+                if (employeeWindowsOverlay != null) employeeWindowsOverlay.SetActive(false);
+                for (int i = 0; i < openEmployeeWindowContainers.Count; i++)
+                {
+                    var go = openEmployeeWindowContainers[i];
+                    if (go != null) go.SetActive(false);
+                }
+
+                // Deactivate the UniverseLib panel holder itself to fully hide our panel
+                try
+                {
+                    GameObject uiRoot = null;
+                    try { uiRoot = this.Owner != null ? this.Owner.RootObject : null; } catch { uiRoot = null; }
+                    if (uiRoot != null)
+                    {
+                        // Find PanelHolder/PanelHolder relative to the UI root
+                        Transform holder = uiRoot.transform;
+                        try { holder = holder.Find("PanelHolder/PanelHolder"); } catch { holder = null; }
+                        universeLibPanelHolder = holder != null ? holder.gameObject : null;
+                        if (universeLibPanelHolder != null)
+                        {
+                            prevUniverseLibPanelHolderActive = universeLibPanelHolder.activeSelf;
+                            universeLibPanelHolder.SetActive(false);
+                        }
+                    }
+                }
+                catch { }
+                modalSuppressed = true;
+            }
+            catch { modalSuppressed = true; }
+        }
+
+        // Restore the panel content after the modal popup is dismissed
+        public void EndModalSuppression()
+        {
+            if (!modalSuppressed) return;
+            try
+            {
+                if (mainMenuContainer != null) mainMenuContainer.SetActive(prevMainMenuActive);
+                if (purchaseBusinessContainer != null) purchaseBusinessContainer.SetActive(prevPurchaseActive);
+                if (ownedBusinessesContainer != null) ownedBusinessesContainer.SetActive(prevOwnedActive);
+                if (businessDetailsContainer != null) businessDetailsContainer.SetActive(prevDetailsActive);
+                if (employeeDetailsContainer != null) employeeDetailsContainer.SetActive(prevEmpDetailsActive);
+                if (employeeWindowsOverlay != null) employeeWindowsOverlay.SetActive(prevOverlayActive);
+
+                for (int i = 0; i < openEmployeeWindowContainers.Count; i++)
+                {
+                    var go = openEmployeeWindowContainers[i];
+                    if (go != null) go.SetActive(prevActiveEmployeeWindows.Contains(go));
+                }
+
+                // Restore UniverseLib panel holder active state
+                try
+                {
+                    if (universeLibPanelHolder != null)
+                    {
+                        universeLibPanelHolder.SetActive(prevUniverseLibPanelHolderActive);
+                    }
+                }
+                catch { }
+            }
+            catch { }
+            finally
+            {
+                prevActiveEmployeeWindows.Clear();
+                modalSuppressed = false;
+                universeLibPanelHolder = null;
+            }
+        }
         
         protected override void ConstructPanelContent()
         {
