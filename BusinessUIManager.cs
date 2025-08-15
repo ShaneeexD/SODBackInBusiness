@@ -263,8 +263,50 @@ namespace BackInBusiness
                 }
                 catch { }
 
-                // Note: We'll replace the template's button controllers with our own later per design.
-                Plugin.Logger.LogInfo("ShowFireYesNo: Cloned TooltipCanvas/PopupMessage and displayed it.");
+                // Replace template button controllers with our own and set labels
+                try
+                {
+                    // Left button -> "No"
+                    var leftBtnTf = clone.transform.Find("ButtonArea/Left Button");
+                    if (leftBtnTf != null)
+                    {
+                        // Disable game's ButtonController if present
+                        try { var bc = leftBtnTf.gameObject.GetComponent("ButtonController"); if (bc != null) { var beh = bc as Behaviour; if (beh != null) beh.enabled = false; else UnityEngine.Object.Destroy(bc); } } catch { }
+                        // Add our controller if missing
+                        if (leftBtnTf.gameObject.GetComponent<BIBButtonController>() == null)
+                            leftBtnTf.gameObject.AddComponent<BIBButtonController>();
+                        // Set label text
+                        try
+                        {
+                            var leftTextTf = leftBtnTf.Find("Text");
+                            var leftTmp = leftTextTf != null ? leftTextTf.GetComponent<TMP_Text>() : null;
+                            if (leftTmp != null) leftTmp.text = "No"; // Always use No on left per design
+                        }
+                        catch { }
+                    }
+
+                    // Right button -> "Yes"
+                    var rightBtnTf = clone.transform.Find("ButtonArea/Right Button");
+                    if (rightBtnTf != null)
+                    {
+                        // Disable game's ButtonController if present
+                        try { var bc = rightBtnTf.gameObject.GetComponent("ButtonController"); if (bc != null) { var beh = bc as Behaviour; if (beh != null) beh.enabled = false; else UnityEngine.Object.Destroy(bc); } } catch { }
+                        // Add our controller if missing
+                        if (rightBtnTf.gameObject.GetComponent<BIBButtonController>() == null)
+                            rightBtnTf.gameObject.AddComponent<BIBButtonController>();
+                        // Set label text
+                        try
+                        {
+                            var rightTextTf = rightBtnTf.Find("Text");
+                            var rightTmp = rightTextTf != null ? rightTextTf.GetComponent<TMP_Text>() : null;
+                            if (rightTmp != null) rightTmp.text = "Yes"; // Always use Yes on right per design
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
+                Plugin.Logger.LogInfo("ShowFireYesNo: Cloned TooltipCanvas/PopupMessage, customized buttons, and displayed it.");
             }
             catch (System.Exception ex)
             {
